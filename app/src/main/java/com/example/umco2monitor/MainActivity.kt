@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val requestMultiplePermissions = registerForActivityResult(
+    private val requestMultiplePermissions: ActivityResultLauncher<Array<String>?> = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         permissions.entries.forEach { (permission, isGranted) ->
@@ -85,15 +86,15 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(viewModel: SensorViewModel, modifier: Modifier = Modifier) {
-    val bleConnectionState by viewModel.bleConnectionState.collectAsState()
-    val co2Value by viewModel.co2Value.collectAsState()
+    val bleConnectionState: BleConnectionState by viewModel.bleConnectionState.collectAsState()
+    val co2Value: Int? by viewModel.co2Value.collectAsState()
 
     Column(
         modifier = modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        when (val state = bleConnectionState) {
+        when (val state: BleConnectionState = bleConnectionState) {
             is BleConnectionState.Disconnected -> {
                 Text(
                     text = "Ready to scan for BLE devices.",

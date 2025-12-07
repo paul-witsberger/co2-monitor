@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
@@ -37,28 +38,28 @@ sealed interface BleConnectionState {
 }
 
 class SensorViewModel(private val application: Application) : ViewModel() {
-    private val _bleConnectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
+    private val _bleConnectionState: MutableStateFlow<BleConnectionState> = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
     val bleConnectionState: StateFlow<BleConnectionState> = _bleConnectionState.asStateFlow()
 
-    private val _co2Value = MutableStateFlow<Int?>(null)
-    val co2Value = _co2Value.asStateFlow()
+    private val _co2Value: MutableStateFlow<Int?> = MutableStateFlow<Int?>(null)
+    val co2Value: StateFlow<Int?> = _co2Value.asStateFlow()
 
-    private val bluetoothManager = application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    private val bluetoothManager: BluetoothManager = application.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
-    private val scanner = bluetoothAdapter?.bluetoothLeScanner
+    private val scanner: BluetoothLeScanner? = bluetoothAdapter?.bluetoothLeScanner
 
-    private val bleManager = ArduinoBleManager(application)
+    private val bleManager: ArduinoBleManager = ArduinoBleManager(application)
 
-    private val scanSettings = ScanSettings.Builder()
+    private val scanSettings: ScanSettings? = ScanSettings.Builder()
         .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
         .build()
 
-    private val scanCallback = object : ScanCallback() {
+    private val scanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             result ?: return // Ignore null results
 
             // Check if the device is already in the list to avoid duplicates
-            val currentDevices = if (_bleConnectionState.value is BleConnectionState.Scanning) {
+            val currentDevices: List<DiscoveredDevice> = if (_bleConnectionState.value is BleConnectionState.Scanning) {
                 (_bleConnectionState.value as BleConnectionState.Scanning).discoveredDevices
             } else {
                 emptyList()
@@ -69,7 +70,7 @@ class SensorViewModel(private val application: Application) : ViewModel() {
                 if (ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                     return
                 }
-                val newDevice = DiscoveredDevice(
+                val newDevice: DiscoveredDevice = DiscoveredDevice(
                     name = result.device.name ?: "Unknown Device",
                     address = result.device.address,
                     device = result.device
