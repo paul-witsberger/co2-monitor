@@ -16,11 +16,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-// UUID for the CCCD (Client Characteristic Configuration Descriptor)
-private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+// UUID for the CCCD (Client Characteristic Configuration Descriptor); this is a standard UUID
+private val CCCD_UUID: UUID = UUID.fromString("0x2902")
 
-val SENSOR_SERVICE_UUID: UUID = UUID.fromString("19B10000-E8F2-537E-4F6C-D104768A1214")
-val CO2_CHARACTERISTIC_UUID: UUID = UUID.fromString("19B10001-E8F2-537E-4F6C-D104768A1214")
+// Standard UUIDs exist for temperature and humidity characteristics and environmental sensing service
+val ENVS_SERVICE_UUID: UUID = UUID.fromString("0x181a")
+val TEMPERATURE_CHARACTERISTIC_UUID: UUID = UUID.fromString("0x2a6e")
+val HUMIDITY_CHARACTERISTIC_UUID: UUID = UUID.fromString("0x2a6f")
+
+// Version 4 UUIDs generated from https://www.uuidgenerator.net/
+val SENSOR_SERVICE_UUID: UUID = UUID.fromString("3e6cebcd-d4f8-46e2-9513-056d94a6377c")
+val CO2_CHARACTERISTIC_UUID: UUID = UUID.fromString("b70c91c7-40b6-461f-aeff-4b15a16fd0e7")
 
 class ArduinoBleManager(private val context: Context) {
 
