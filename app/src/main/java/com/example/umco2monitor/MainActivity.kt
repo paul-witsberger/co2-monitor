@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     private val requestMultiplePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             permissions.entries.forEach {
-                // Handle permission results if needed
+                // TODO Handle permission results if needed
             }
         }
 
@@ -129,7 +129,7 @@ fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
 }
 
 @Composable
-fun ConnectedScreen(co2Value: Int?, onDisconnectClicked: () -> Unit) {
+fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -138,7 +138,7 @@ fun ConnectedScreen(co2Value: Int?, onDisconnectClicked: () -> Unit) {
         Text("CO2 Reading", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "${co2Value ?: "--"}",
+            text = co2Value?.toString() ?: "--",
             style = MaterialTheme.typography.displayLarge
         )
         Text("ppm")
