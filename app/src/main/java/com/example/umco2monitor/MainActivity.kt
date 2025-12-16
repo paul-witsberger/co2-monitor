@@ -22,8 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
 
+/**
+ * Main activity of the application. This is the entry point of the app.
+ */
 class MainActivity : ComponentActivity() {
 
+    // Handles the result of the runtime permission request dialog.
     private val requestMultiplePermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             permissions.entries.forEach {
@@ -31,6 +35,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * The entry point for the activity. This function sets up the UI, requests necessary
+     * Bluetooth permissions, and initializes the ViewModel.
+     * @param savedInstanceState If the activity is being re-initialized after previously being shut
+     * down then this Bundle contains the data it most recently supplied in
+     * onSaveInstanceState(Bundle).
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -47,6 +58,7 @@ class MainActivity : ComponentActivity() {
             ))
         }
 
+        // Initializes the ViewModel and sets up the UI
         setContent {
             val viewModel: SensorViewModel = viewModel(factory = SensorViewModelFactory(application))
             UMCO2MonitorTheme {
@@ -64,6 +76,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * The main container Composable that acts as a router for the app's UI.
+ * It observes the [BleConnectionState] and displays the appropriate screen
+ * (e.g., [DisconnectedScreen], [ScanningScreen], etc.) based on the current state.
+ *
+ * @param viewModel The app's central ViewModel, providing state and event handlers.
+ * @param modifier The modifier to be applied to the layout.
+ */
 @Composable
 fun MainScreen(viewModel: SensorViewModel, modifier: Modifier = Modifier) {
     val bleConnectionState by viewModel.bleConnectionState.collectAsState()
@@ -79,6 +99,10 @@ fun MainScreen(viewModel: SensorViewModel, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * This screen is displayed when the app is not connected to a BLE device.
+ * @param onScanClicked The action to perform when the "Scan for Devices" button is clicked.
+ */
 @Composable
 fun DisconnectedScreen(onScanClicked: () -> Unit) {
     Column(
@@ -94,6 +118,11 @@ fun DisconnectedScreen(onScanClicked: () -> Unit) {
     }
 }
 
+/**
+ * This screen is displayed when the app is scanning for BLE devices.
+ * @param devices The list of discovered devices.
+ * @param onDeviceClicked The action to perform when a device is clicked.
+ */
 @Composable
 fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit) {
     Column(modifier = Modifier.padding(16.dp)) {
@@ -111,6 +140,11 @@ fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (Discovered
     }
 }
 
+/**
+ * This is a list item that represents a discovered device.
+ * @param device The discovered device.
+ * @param onClick The action to perform when the device is clicked.
+ */
 @Composable
 fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
     Card(
@@ -128,6 +162,11 @@ fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
     }
 }
 
+/**
+ * This screen is displayed when the app is connected to a BLE device.
+ * @param co2Value The current CO2 value.
+ * @param onDisconnectClicked The action to perform when the "Disconnect" button is clicked.
+ */
 @Composable
 fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
     Column(
@@ -149,6 +188,11 @@ fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
     }
 }
 
+/**
+ * This screen is displayed when an error occurs.
+ * @param message The error message to display.
+ * @param onTryAgainClicked The action to perform when the "Try Again" button is clicked.
+ */
 @Composable
 fun ErrorScreen(message: String, onTryAgainClicked: () -> Unit) {
     Column(
