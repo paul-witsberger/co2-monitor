@@ -7,9 +7,13 @@ import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.welie.blessed.BluetoothPeripheral
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 
 /**
  * Data class representing a discovered BLE device.
@@ -47,32 +51,56 @@ sealed interface BleConnectionState {
  * @param application The application context.
  */
 class SensorViewModel(private val application: Application) : ViewModel() {
+    private val _bleConnectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
     /**
-     * The current state of the BLE connection, sourced from BluetoothHandler.
+     * Holds the state of the BLE connection, which is updated indirectly via BluetoothHandler.
      */
-    val bleConnectionState: StateFlow<BleConnectionState> = BluetoothHandler.bleConnectionState
+    val bleConnectionState: StateFlow<BleConnectionState> = _bleConnectionState.asStateFlow()
 
     /**
      * The most recent CO2 value, sourced from BluetoothHandler.
      */
     val co2Value: StateFlow<UShort?> = BluetoothHandler.co2Value
 
+    /**
+     * The most recent temperature value, sourced from BluetoothHandler.
+     */
+    val temperatureValue: StateFlow<Double?> = BluetoothHandler.temperatureValue
+
+    /**
+     * The most recent humidity value, sourced from BluetoothHandler.
+     */
+    val humidityValue: StateFlow<Double?> = BluetoothHandler.humidityValue
+
+    /**
+     * The most recent battery level value, sourced from BluetoothHandler.
+     */
+    val batteryLevel: StateFlow<UInt?> = BluetoothHandler.batteryLevel
+
     // Initialize the BluetoothHandler when the ViewModel is created.
     init {
         BluetoothHandler.initialize(application)
+        BluetoothHandler.bleConnectionState.onEach { state ->
+            _bleConnectionState.value = state
+        }.launchIn(viewModelScope)
     }
 
     /**
-     * Starts a scan for BLE devices.
+     * Called when the user denies the necessary permissions. Updates the UI to reflect the decision.
+     */
+    fun onPermissionsDenied() {
+        _bleConnectionState.value = BleConnectionState.Error("Permissions were denied by the user. Please enable them in settings and try again.")
+    }
+
+    /**
+     * Starts a scan for BLE devices. First checks for necessary permissions.
      */
     fun startScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ActivityCompat.checkSelfPermission(application,
-                Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-            // TODO In a real app, you'd trigger a permission request from the UI.
-            // For now, we can update a state to inform the user.
-            // This logic correctly lives in the ViewModel, not the BLE handler.
-            (bleConnectionState as? MutableStateFlow)?.value = BleConnectionState.Error("Bluetooth Scan permission not granted")
+            (ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
+             ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
+            ) {
+            onPermissionsDenied()
             return
         }
         BluetoothHandler.startScan()
@@ -87,7 +115,7 @@ class SensorViewModel(private val application: Application) : ViewModel() {
     }
 
     /**
-     * Connects to a discovered device.
+     * Connects to a specific discovered device.
      * @param device The device to connect to.
      */
     fun connectToDevice(device: DiscoveredDevice) {

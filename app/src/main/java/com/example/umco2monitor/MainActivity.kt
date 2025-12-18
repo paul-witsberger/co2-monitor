@@ -1,11 +1,17 @@
 package com.example.umco2monitor
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
@@ -26,14 +33,71 @@ import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
  * Main activity of the application. This is the entry point of the app.
  */
 class MainActivity : ComponentActivity() {
+    /*
+    The ViewModel for this activity. This stores the current state of the app. "by viewModels"
+    delegates the creation of the ViewModel to the Android framework so that the viewModel persists
+    even after the activity is destroyed.
+    */
+    private val viewModel: SensorViewModel by viewModels { SensorViewModelFactory(application) }
 
     // Handles the result of the runtime permission request dialog.
-    private val requestMultiplePermissions =
+    private val requestMultiplePermissions: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            permissions.entries.forEach {
-                // TODO Handle permission results if needed
+            // Check if any of the permissions were denied
+            val fineLocationDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                false
+            } else {
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == false
+            }
+            // BLUETOOTH_CONNECT and BLUETOOTH_SCAN permissions did not exist before Android S
+            val bluetoothConnectDenied = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                permissions[Manifest.permission.BLUETOOTH_CONNECT] == false
+            } else {
+                false
+            }
+            val bluetoothScanDenied = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                permissions[Manifest.permission.BLUETOOTH_SCAN] == false
+            } else {
+                false
+            }
+
+            // If a necessary permission was denied, inform the user
+            if (fineLocationDenied || bluetoothConnectDenied || bluetoothScanDenied) {
+                // Show a dialog to explain why the permission is needed
+                Toast.makeText(
+                    this,
+                    "Bluetooth and location permissions are required to scan for sensors. Please try again and accept the permissions for this app to function.",
+                    Toast.LENGTH_LONG
+                ).show()
+                // Update the app state to reflect the permission decision
+                viewModel.onPermissionsDenied()
             }
         }
+
+    // Relaunches the permission request dialog in case the user has denied the necessary permissions
+    fun reRequestPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+        requestMultiplePermissions.launch(permissions)
+    }
+
+    // Opens the application's details screen in the system settings to allow the user to manually
+    // enable the necessary permissions
+    fun openAppSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null)
+        )
+        startActivity(intent)
+    }
 
     /**
      * The entry point for the activity. This function sets up the UI, requests necessary
@@ -49,8 +113,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             requestMultiplePermissions.launch(arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.ACCESS_FINE_LOCATION
+                Manifest.permission.BLUETOOTH_CONNECT
             ))
         } else {
             requestMultiplePermissions.launch(arrayOf(
@@ -58,9 +121,8 @@ class MainActivity : ComponentActivity() {
             ))
         }
 
-        // Initializes the ViewModel and sets up the UI
+        // Sets up the UI
         setContent {
-            val viewModel: SensorViewModel = viewModel(factory = SensorViewModelFactory(application))
             UMCO2MonitorTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -68,6 +130,7 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     MainScreen(
                         viewModel = viewModel,
+                        activity = this@MainActivity,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -82,10 +145,11 @@ class MainActivity : ComponentActivity() {
  * (e.g., [DisconnectedScreen], [ScanningScreen], etc.) based on the current state.
  *
  * @param viewModel The app's central ViewModel, providing state and event handlers.
+ * @param activity The activity that the UI is displayed in.
  * @param modifier The modifier to be applied to the layout.
  */
 @Composable
-fun MainScreen(viewModel: SensorViewModel, modifier: Modifier = Modifier) {
+fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Modifier = Modifier) {
     val bleConnectionState by viewModel.bleConnectionState.collectAsState()
     val co2Value by viewModel.co2Value.collectAsState()
 
@@ -94,7 +158,23 @@ fun MainScreen(viewModel: SensorViewModel, modifier: Modifier = Modifier) {
             is BleConnectionState.Disconnected -> DisconnectedScreen(onScanClicked = { viewModel.startScan() })
             is BleConnectionState.Scanning -> ScanningScreen(devices = state.discoveredDevices, onDeviceClicked = { viewModel.connectToDevice(it) })
             is BleConnectionState.Connected -> ConnectedScreen(co2Value = co2Value, onDisconnectClicked = { viewModel.disconnect() })
-            is BleConnectionState.Error -> ErrorScreen(message = state.message, onTryAgainClicked = { viewModel.startScan() })
+            is BleConnectionState.Error -> {
+                // Check if the error is due to permissions being denied
+                val isPermissionError = "permission" in state.message.lowercase()
+
+                if (isPermissionError) {
+                    ErrorScreen(
+                        message = state.message,
+                        onRerequestClicked = { activity.reRequestPermissions() },
+                        onSettingsClicked = { activity.openAppSettings() }
+                    )
+                } else {
+                    ErrorScreen(
+                        message = state.message,
+                        onRerequestClicked = { viewModel.startScan() }
+                    )
+                }
+            }
         }
     }
 }
@@ -191,10 +271,11 @@ fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
 /**
  * This screen is displayed when an error occurs.
  * @param message The error message to display.
- * @param onTryAgainClicked The action to perform when the "Try Again" button is clicked.
+ * @param buttonText The text to display on the action button.
+ * @param onButtonClicked The action to perform when the button is clicked.
  */
 @Composable
-fun ErrorScreen(message: String, onTryAgainClicked: () -> Unit) {
+fun ErrorScreen(message: String, onRerequestClicked: (() -> Unit)? = null, onSettingsClicked: (() -> Unit)? = null) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -202,10 +283,23 @@ fun ErrorScreen(message: String, onTryAgainClicked: () -> Unit) {
     ) {
         Text("An Error Occurred", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.error)
         Spacer(modifier = Modifier.height(8.dp))
-        Text(message)
+        Text(message, modifier = Modifier.padding(horizontal = 16.dp), textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onTryAgainClicked) {
-            Text("Try Again")
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            onRerequestClicked?.let { onClick ->
+                Button(onClick = onClick) {
+                    Text("Rerequest Permissions")
+                }
+            }
+            onSettingsClicked?.let { onClick ->
+                Button(onClick = onClick) {
+                    Text("Go to Settings")
+                }
+            }
         }
     }
 }
