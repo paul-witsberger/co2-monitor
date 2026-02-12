@@ -7,12 +7,14 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.Process
 import com.welie.blessed.BluetoothBytesParser
 import com.welie.blessed.BluetoothCentralManager
 import com.welie.blessed.BluetoothCentralManagerCallback
 import com.welie.blessed.BluetoothPeripheral
 import com.welie.blessed.BluetoothPeripheralCallback
+import com.welie.blessed.ConnectionPriority
 import com.welie.blessed.from16BitString
 import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
@@ -112,6 +114,10 @@ object BluetoothHandler {
          */
         override fun onServicesDiscovered(peripheral: BluetoothPeripheral) {
             Timber.i("Services discovered for ${peripheral.name}")
+
+            // Set connection priority to balanced and increase Maximum Transmission Unit from 23 to 185
+            peripheral.requestConnectionPriority(ConnectionPriority.BALANCED)
+//            peripheral.requestMtu(185)
 
             // Read DIS characteristics
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MANUFACTURER_NAME_CHARACTERISTIC_UUID)
@@ -353,7 +359,8 @@ object BluetoothHandler {
      * @param peripheral The peripheral to connect to.
      */
     fun connect(peripheral: BluetoothPeripheral) {
-        stopScan()
+        centralManager.stopScan()
+        _bleConnectionState.value = BleConnectionState.Connected(peripheral)
         centralManager.connect(peripheral, peripheralCallback)
     }
 

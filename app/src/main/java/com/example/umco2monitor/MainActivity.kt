@@ -26,7 +26,6 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
 
 /**
@@ -198,6 +197,7 @@ fun DisconnectedScreen(onScanClicked: () -> Unit) {
     }
 }
 
+// TODO Add a Stop Scan button that returns the user to the Disconnected screen
 /**
  * This screen is displayed when the app is scanning for BLE devices.
  * @param devices The list of discovered devices.
@@ -268,11 +268,14 @@ fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
     }
 }
 
+// TODO issue where when Bluetooth is turned off, the error screen only displayed the rerequest
+// TODO permissions button, not the go to settings button, and when pressed the app went to the
+// TODO scanning screen even though Bluetooth was still turned off
 /**
  * This screen is displayed when an error occurs.
  * @param message The error message to display.
- * @param buttonText The text to display on the action button.
- * @param onButtonClicked The action to perform when the button is clicked.
+ * @param onRerequestClicked The action to perform when the "Rerequest Permissions" button is clicked.
+ * @param onSettingsClicked The action to perform when the "Go to Settings" button is clicked.
  */
 @Composable
 fun ErrorScreen(message: String, onRerequestClicked: (() -> Unit)? = null, onSettingsClicked: (() -> Unit)? = null) {
