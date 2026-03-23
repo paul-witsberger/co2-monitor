@@ -1,11 +1,15 @@
 package com.example.umco2monitor
 
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattService
 import com.welie.blessed.BluetoothPeripheral
 import com.welie.blessed.GattStatus
 import com.welie.blessed.from16BitString
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import java.util.UUID
@@ -14,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import timber.log.Timber
 
 /**
  * Local unit tests for BluetoothHandler.
@@ -171,4 +176,71 @@ class BluetoothHandlerTest {
         // Assert that the CO2 value has not changed
         assertEquals(previousValue, BluetoothHandler.co2Value.value)
     }
+
+    @Test
+    fun onServicesDiscovered_verifyMethodCalls() = runTest(testDispatcher) {
+        // Use mock to create objects that can't be created here
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        val service: BluetoothGattService = mockk<BluetoothGattService>()
+
+        // Simulate the ESS Service when getService is called
+        every { peripheral.getService(any()) } returns service
+        // Simulate characteristics when getCharacteristic is called
+        every { peripheral.getCharacteristic(any(), any()) } returns mockk(relaxed = true)
+        every { service.getCharacteristic(any()) } returns mockk(relaxed = true)
+
+        // Call onServicesDiscovered
+        BluetoothHandler.peripheralCallback.onServicesDiscovered(peripheral)
+        advanceUntilIdle()
+
+        // Verify that the correct methods are called
+        verify { peripheral.requestConnectionPriority(any()) }
+        verify { peripheral.readCharacteristic(any(), any()) }
+        verify { peripheral.startNotify(any()) }
+    }
+
+    @Test
+    fun onNotificationStateUpdate_verifyMethodCalls() = runTest(testDispatcher) {
+        // Create mock peripheral and characteristic
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        val characteristic: BluetoothGattCharacteristic = mockk<BluetoothGattCharacteristic>()
+
+        // Set the UUID to the CO2 characteristic
+        every { characteristic.uuid } returns UUID.fromString("b70c91c7-40b6-461f-aeff-4b15a16fd0e7")
+
+        // Simulate that notifications are on for the CO2 characteristic
+        every { peripheral.isNotifying(characteristic) } returns true
+
+        // Set the GattStatus to success
+        val status: GattStatus = GattStatus.SUCCESS
+
+        // Call onNotificationStateUpdate
+        BluetoothHandler.peripheralCallback.onNotificationStateUpdate(peripheral, characteristic, status)
+        advanceUntilIdle()
+
+        // Verify that the notification state is checked
+        verify { peripheral.isNotifying(characteristic) }
+    }
+
+    @Test
+    fun onNotificationStateUpdate_errorHandling() = runTest(testDispatcher) {
+        // Create mock peripheral and characteristic
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        val characteristic: BluetoothGattCharacteristic = mockk<BluetoothGattCharacteristic>()
+
+        // Use a random UUID for the characteristic
+        every { characteristic.uuid } returns UUID.randomUUID()
+
+        // Set the GattStatus to success
+        val status: GattStatus = GattStatus.SUCCESS
+
+        // Call onNotificationStateUpdate
+        BluetoothHandler.peripheralCallback.onNotificationStateUpdate(peripheral, characteristic, status)
+        advanceUntilIdle()
+
+        // Verify that the notification state is checked
+        verify { peripheral.isNotifying(characteristic) }
+    }
+
+
 }
