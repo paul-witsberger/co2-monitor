@@ -19,6 +19,7 @@ import com.welie.blessed.from16BitString
 import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
 import com.welie.blessed.ScanFailure
+import io.mockk.mockk
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,7 @@ object BluetoothHandler {
 
     /**
      * Resets all sensor values to null. Used for testing and clean disconnections.
-     * @param
+     * @param testDispatcher The dispatcher that tests will run on, instead of Dispatcher.IO
      */
     internal fun reset(testDispatcher: CoroutineDispatcher? = null) {
         _co2Value.value = null
@@ -121,6 +122,12 @@ object BluetoothHandler {
         testDispatcher?.let {
             this.dispatcher = it
             this.scope = CoroutineScope(it + SupervisorJob())
+            if (!::bleHandler.isInitialized) {
+                bleHandler = mockk(relaxed = true)
+            }
+            if (!::centralManager.isInitialized) {
+                centralManager = mockk(relaxed = true)
+            }
         }
     }
 

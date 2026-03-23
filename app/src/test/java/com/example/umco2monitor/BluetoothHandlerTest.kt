@@ -7,8 +7,6 @@ import com.welie.blessed.GattStatus
 import com.welie.blessed.from16BitString
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -18,7 +16,6 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import timber.log.Timber
 
 /**
  * Local unit tests for BluetoothHandler.
@@ -242,5 +239,68 @@ class BluetoothHandlerTest {
         verify { peripheral.isNotifying(characteristic) }
     }
 
+    @Test
+    fun onDiscovered_addsNewDevice() = runTest(testDispatcher) {
+        // Put app into scanning state
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
 
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        every { peripheral.name } returns "Test Device"
+        every { peripheral.address } returns "00:00:00:00:00:00"
+
+        // Call onDiscovered
+        BluetoothHandler.centralManagerCallback.onDiscovered(peripheral, mockk())
+        advanceUntilIdle()
+
+        // Verify that the device was added to the list
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Scanning)
+        val devices: List<DiscoveredDevice> = (state as BleConnectionState.Scanning).discoveredDevices
+        assertEquals(1, devices.size)
+        assertEquals("Test Device", devices[0].name)
+        assertEquals("00:00:00:00:00:00", devices[0].address)
+    }
+
+    @Test
+    fun onDiscovered_ignoresDuplicateDevice() = runTest(testDispatcher) {
+        // Put app into scanning state
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        every { peripheral.name } returns "Test Device"
+        every { peripheral.address } returns "00:00:00:00:00:00"
+
+        // Call onDiscovered twice with the same device
+        BluetoothHandler.centralManagerCallback.onDiscovered(peripheral, mockk())
+        advanceUntilIdle()
+        BluetoothHandler.centralManagerCallback.onDiscovered(peripheral, mockk())
+        advanceUntilIdle()
+
+        // Verify that the device was only added once
+        val state: BleConnectionState.Scanning = BluetoothHandler.bleConnectionState.value as BleConnectionState.Scanning
+        assertEquals(1, state.discoveredDevices.size)
+    }
+
+    @Test
+    fun onDiscovered_ignoresBlankNames() = runTest(testDispatcher) {
+        // Put app into scanning state
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Create a mock peripheral with a blank name
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        every { peripheral.name } returns ""
+
+        // Call onDiscovered
+        BluetoothHandler.centralManagerCallback.onDiscovered(peripheral, mockk())
+        advanceUntilIdle()
+
+        // Check that no devices were added
+        val state: BleConnectionState.Scanning = BluetoothHandler.bleConnectionState.value as BleConnectionState.Scanning
+        assertEquals(0, state.discoveredDevices.size)
+    }
 }
