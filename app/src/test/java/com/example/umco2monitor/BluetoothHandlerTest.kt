@@ -12,8 +12,8 @@ import java.util.UUID
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 /**
  * Local unit tests for BluetoothHandler.
@@ -24,7 +24,7 @@ import org.junit.Test
 class BluetoothHandlerTest {
 
     private lateinit var testDispatcher: CoroutineDispatcher
-    @Before
+    @BeforeEach
     fun setup() {
         // Clear old data from previous tests and set up the test dispatcher
         testDispatcher = StandardTestDispatcher()
