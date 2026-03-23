@@ -19,6 +19,7 @@ import com.welie.blessed.from16BitString
 import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
 import com.welie.blessed.ScanFailure
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,8 +52,9 @@ object BluetoothHandler {
     private val handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
     private lateinit var bleHandler: Handler
 
-    // Scope for launching coroutines
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Set the scope for launching coroutines
+    internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
+    private var scope = CoroutineScope(dispatcher + SupervisorJob())
 
     // --- Public StateFlows ---
     private val _bleConnectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
@@ -67,13 +69,13 @@ object BluetoothHandler {
      */
     val co2Value = _co2Value.asStateFlow()
 
-    private val _temperatureValue = MutableStateFlow<Double?>(null)
+    private val _temperatureValue = MutableStateFlow<Short?>(null)
     /**
      * Public state flow for temperature value.
      */
     val temperatureValue = _temperatureValue.asStateFlow()
 
-    private val _humidityValue = MutableStateFlow<Double?>(null)
+    private val _humidityValue = MutableStateFlow<UShort?>(null)
     /**
      * Public state flow for humidity value.
      */
@@ -105,9 +107,27 @@ object BluetoothHandler {
     private val BATTERY_LEVEL_CHARACTERISTIC_UUID: UUID = from16BitString("2A19")
 
     /**
+     * Resets all sensor values to null. Used for testing and clean disconnections.
+     * @param
+     */
+    internal fun reset(testDispatcher: CoroutineDispatcher? = null) {
+        _co2Value.value = null
+        _temperatureValue.value = null
+        _humidityValue.value = null
+        _batteryLevel.value = null
+        _bleConnectionState.value = BleConnectionState.Disconnected
+
+        // Use the test dispatcher if provided, otherwise use the default dispatcher
+        testDispatcher?.let {
+            this.dispatcher = it
+            this.scope = CoroutineScope(it + SupervisorJob())
+        }
+    }
+
+    /**
      * Handles all events related to a specific, connected peripheral.
      */
-    private val peripheralCallback = object : BluetoothPeripheralCallback() {
+    internal val peripheralCallback = object : BluetoothPeripheralCallback() {
         /**
          * Triggered when a peripheral's services are discovered.
          * @param peripheral The peripheral that was discovered.
@@ -202,18 +222,19 @@ object BluetoothHandler {
                 }
 
                 TEMPERATURE_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for a 32-bit float (4)
-                    if (value.size >= 4) {
-                        val temp: Double = parser.getFloat()
+                    // Check if there are enough bytes for a 16-bit signed integer (2)
+                    if (value.size >= 2) {
+                        val rawTemp: Short = parser.getInt16()
+                        val temp: Short = (rawTemp / 100.0).toInt().toShort()
                         Timber.i("Received Temperature value: $temp")
                         scope.launch { _temperatureValue.emit(temp) }
                     }
                 }
 
                 HUMIDITY_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for a 32-bit float (4)
-                    if (value.size >= 4) {
-                        val humidity: Double = parser.getFloat()
+                    // Check if there are enough bytes for a 16-bit unsigned integer (2)
+                    if (value.size >= 2) {
+                        val humidity: UShort = parser.getUInt16()
                         Timber.i("Received Humidity value: $humidity")
                         scope.launch { _humidityValue.emit(humidity) }
                     }
@@ -235,7 +256,7 @@ object BluetoothHandler {
      * Handles all events related to the central manager. This includes scanning, connecting, and
      * disconnecting from peripherals.
      */
-    private val centralManagerCallback = object : BluetoothCentralManagerCallback() {
+    internal val centralManagerCallback = object : BluetoothCentralManagerCallback() {
         /**
          * Triggered when a peripheral is discovered. Adds the discovered peripheral to the list of
          * discovered devices if necessary.

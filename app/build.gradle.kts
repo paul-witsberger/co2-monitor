@@ -6,9 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.umco2monitor"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.umco2monitor"
@@ -39,6 +37,14 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.all {
+            // Suppress dynamic Java agent loading warning
+            it.jvmArgs("-XX:+EnableDynamicAgentLoading")
+            it.useJUnitPlatform()
+        }
+    }
+
 }
 
 dependencies {
@@ -50,7 +56,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    testImplementation("io.mockk:mockk:1.14.9")
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation(libs.junit.jupiter)
+    testImplementation(kotlin("test"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

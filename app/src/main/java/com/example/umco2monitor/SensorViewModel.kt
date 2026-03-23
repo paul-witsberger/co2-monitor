@@ -65,12 +65,12 @@ class SensorViewModel(private val application: Application) : ViewModel() {
     /**
      * The most recent temperature value, sourced from BluetoothHandler.
      */
-    val temperatureValue: StateFlow<Double?> = BluetoothHandler.temperatureValue
+    val temperatureValue: StateFlow<Short?> = BluetoothHandler.temperatureValue
 
     /**
      * The most recent humidity value, sourced from BluetoothHandler.
      */
-    val humidityValue: StateFlow<Double?> = BluetoothHandler.humidityValue
+    val humidityValue: StateFlow<UShort?> = BluetoothHandler.humidityValue
 
     /**
      * The most recent battery level value, sourced from BluetoothHandler.
@@ -152,3 +152,4 @@ class SensorViewModelFactory(private val application: Application) : ViewModelPr
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
