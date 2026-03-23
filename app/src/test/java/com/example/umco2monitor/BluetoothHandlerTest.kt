@@ -1,10 +1,13 @@
 package com.example.umco2monitor
 
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattService
 import com.welie.blessed.BluetoothPeripheral
-import com.welie.blessed.GattStatus
 import com.welie.blessed.from16BitString
+import com.welie.blessed.GattStatus
+import com.welie.blessed.HciStatus
+import com.welie.blessed.ScanFailure
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -302,5 +305,99 @@ class BluetoothHandlerTest {
         // Check that no devices were added
         val state: BleConnectionState.Scanning = BluetoothHandler.bleConnectionState.value as BleConnectionState.Scanning
         assertEquals(0, state.discoveredDevices.size)
+    }
+
+    @Test
+    fun onConnected_updatesState() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+
+        // Create a mock device
+        every { peripheral.name } returns "Test Device"
+        every { peripheral.address } returns "00:00:00:00:00:00"
+
+        // Call onConnected
+        BluetoothHandler.centralManagerCallback.onConnected(peripheral)
+        advanceUntilIdle()
+
+        // Verify that the state is Connected and the correct peripheral is set
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Connected)
+
+        val connectedState: BleConnectionState.Connected = state as BleConnectionState.Connected
+        assertEquals(peripheral, connectedState.peripheral)
+        assertEquals("Test Device", connectedState.peripheral.name)
+    }
+
+    @Test
+    fun onDisconnected_resetsState() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+
+        // Create a characteristic and give it a value
+        val characteristic: BluetoothGattCharacteristic = mockk<BluetoothGattCharacteristic>()
+        every { characteristic.uuid } returns UUID.fromString("b70c91c7-40b6-461f-aeff-4b15a16fd0e7")
+        BluetoothHandler.peripheralCallback.onCharacteristicUpdate(peripheral, byteArrayOf(0xF4.toByte(), 0x01), characteristic, GattStatus.SUCCESS)
+        advanceUntilIdle()
+        assertEquals(500.toUShort(), BluetoothHandler.co2Value.value)
+
+        // Call onDisconnected
+        BluetoothHandler.centralManagerCallback.onDisconnected(peripheral, HciStatus.SUCCESS)
+        advanceUntilIdle()
+
+        // Verify the state is Disconnected and that values have been reset
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Disconnected)
+        assertEquals(null, BluetoothHandler.co2Value.value)
+        assertEquals(null, BluetoothHandler.temperatureValue.value)
+        assertEquals(null, BluetoothHandler.humidityValue.value)
+        assertEquals(null, BluetoothHandler.batteryLevel.value)
+    }
+
+    @Test
+    fun onConnectionFailed_throwsError() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        every { peripheral.name } returns "Test Device"
+
+        // Call onConnectionFailed
+        BluetoothHandler.centralManagerCallback.onConnectionFailed(peripheral, HciStatus.ERROR)
+        advanceUntilIdle()
+
+        // Verify that the state is Error
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Error)
+        val errorMessage = (state as BleConnectionState.Error).message
+        assert(errorMessage.contains("Connection failed"))
+    }
+
+    @Test
+    fun onScanFailed_throwsError() = runTest(testDispatcher) {
+        // Start a scan
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Call onScanFailed
+        BluetoothHandler.centralManagerCallback.onScanFailed(ScanFailure.OUT_OF_HARDWARE_RESOURCES)
+        advanceUntilIdle()
+        // Verify that the state is Error
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Error)
+        assert((state as BleConnectionState.Error).message.contains("Scan failed"))
+    }
+
+    @Test
+    fun onBluetoothAdapterStateChanged_stateChanges() = runTest(testDispatcher) {
+        // Start a scan
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Turn Bluetooth off on the phone
+        BluetoothHandler.centralManagerCallback.onBluetoothAdapterStateChanged(BluetoothAdapter.STATE_OFF)
+        advanceUntilIdle()
+
+        // Verify that the state is Disconnected
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Error)
     }
 }
