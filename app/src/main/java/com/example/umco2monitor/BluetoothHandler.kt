@@ -7,7 +7,6 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
-import android.os.Looper
 import android.os.Process
 import com.welie.blessed.BluetoothBytesParser
 import com.welie.blessed.BluetoothCentralManager
