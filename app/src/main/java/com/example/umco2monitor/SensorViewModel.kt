@@ -95,11 +95,11 @@ class SensorViewModel(private val application: Application) : ViewModel() {
     /**
      * Starts a scan for BLE devices. First checks for necessary permissions.
      */
-    fun startScan() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+    fun startScan(sdkInt: Int = Build.VERSION.SDK_INT) { // Default to real system value
+        if (sdkInt >= Build.VERSION_CODES.S &&
             (ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
-             ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-            ) {
+                    ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
+        ) {
             onPermissionsDenied()
             return
         }
@@ -152,4 +152,3 @@ class SensorViewModelFactory(private val application: Application) : ViewModelPr
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
-
