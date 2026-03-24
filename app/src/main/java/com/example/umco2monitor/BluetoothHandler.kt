@@ -45,12 +45,12 @@ object BluetoothHandler {
 
     // --- BLE Core Components ---
     // Create the BluetoothCentralManager object
-    private lateinit var centralManager: BluetoothCentralManager
+    internal lateinit var centralManager: BluetoothCentralManager
     private var isInitialized = false
 
     // Create a dedicated thread for BLE operations
     private val handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
-    private lateinit var bleHandler: Handler
+    internal lateinit var bleHandler: Handler
 
     // Set the scope for launching coroutines
     internal var dispatcher: CoroutineDispatcher = Dispatchers.IO

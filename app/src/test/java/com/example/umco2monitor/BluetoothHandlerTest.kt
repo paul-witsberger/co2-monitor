@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
 
 /**
  * Local unit tests for BluetoothHandler.
@@ -399,5 +400,87 @@ class BluetoothHandlerTest {
         // Verify that the state is Disconnected
         val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
         assert(state is BleConnectionState.Error)
+    }
+
+    @Test
+    fun startScan_scanIsStarted() = runTest(testDispatcher) {
+        // Start a scan
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Verify that the state is Scanning
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Scanning)
+
+        // Verify that the central manager is scanning
+        verify { BluetoothHandler.centralManager.scanForPeripheralsWithServices(any()) }
+
+
+        // Verify that the timer was set on the bleHandler
+        verify { BluetoothHandler.bleHandler.postDelayed(any(), 15000) }
+    }
+
+    @Test
+    fun stopScan_scanHasStopped() = runTest(testDispatcher) {
+        // Start scanning and mock that centralManager.isScanning is true
+        every { BluetoothHandler.centralManager.isScanning } returns true
+        BluetoothHandler.startScan()
+        advanceUntilIdle()
+
+        // Stop scanning
+        BluetoothHandler.stopScan()
+        advanceUntilIdle()
+
+        // Verify that the state is Disconnected and the central manager was called
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Disconnected)
+        verify { BluetoothHandler.centralManager.stopScan() }
+    }
+
+    @Test
+    fun connect_callsManagerAndUpdatesState() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+
+        // Call connect
+        BluetoothHandler.connect(peripheral)
+        advanceUntilIdle()
+
+        // Verify that the state is Connected and the correct peripheral is set
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Connected)
+        assertEquals(peripheral, (state as BleConnectionState.Connected).peripheral)
+
+        // Verify that centralManager.connect was called
+        verify { BluetoothHandler.centralManager.connect(peripheral, BluetoothHandler.peripheralCallback) }
+    }
+
+    @Test
+    fun disconnect_callsManagerAndUpdatesState() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+
+        // Call connect to set the state to Connected
+        BluetoothHandler.connect(peripheral)
+        advanceUntilIdle()
+
+        // Verify that we are connected first
+        var state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Connected)
+
+        // Call disconnect
+        BluetoothHandler.disconnect(peripheral)
+        advanceUntilIdle()
+
+        // Verify that centralManager.disconnect was called
+        verify { BluetoothHandler.centralManager.cancelConnection(peripheral) }
+
+        // Siumlate the onDisconnected callback
+        BluetoothHandler.centralManagerCallback.onDisconnected(peripheral, HciStatus.SUCCESS)
+        advanceUntilIdle()
+
+        // Verify that the state is Disconnected
+        state = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Disconnected)
     }
 }
