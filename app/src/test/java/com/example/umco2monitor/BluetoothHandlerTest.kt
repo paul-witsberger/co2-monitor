@@ -19,7 +19,6 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestFactory
 
 /**
  * Local unit tests for BluetoothHandler.
@@ -475,7 +474,7 @@ class BluetoothHandlerTest {
         // Verify that centralManager.disconnect was called
         verify { BluetoothHandler.centralManager.cancelConnection(peripheral) }
 
-        // Siumlate the onDisconnected callback
+        // Simulate the onDisconnected callback
         BluetoothHandler.centralManagerCallback.onDisconnected(peripheral, HciStatus.SUCCESS)
         advanceUntilIdle()
 

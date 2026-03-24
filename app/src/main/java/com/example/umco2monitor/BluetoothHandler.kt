@@ -49,7 +49,7 @@ object BluetoothHandler {
     private var isInitialized = false
 
     // Create a dedicated thread for BLE operations
-    private val handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
+    internal val handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
     internal lateinit var bleHandler: Handler
 
     // Set the scope for launching coroutines
