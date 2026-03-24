@@ -11,6 +11,12 @@
       <SelectionState runConfigName="testViewModelFactory_createsViewModelOnDevice()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
+      <SelectionState runConfigName="MainActivityInstrumentedTest">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="mainScreen_transitionsFromScanningToConnected()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

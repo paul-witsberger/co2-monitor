@@ -50,7 +50,6 @@ android {
 }
 
 dependencies {
-    implementation(libs.mockk)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -59,21 +58,27 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    
+    // mockk is needed in implementation because BluetoothHandler.kt (main) uses it for reset()
+    implementation(libs.mockk)
+
     testImplementation(libs.mockk)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
+    
+    androidTestImplementation(libs.mockk.android)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Include BLESSED and Timber libraries
     implementation(libs.blessed.kotlin)
     implementation(libs.timber)
-
 }

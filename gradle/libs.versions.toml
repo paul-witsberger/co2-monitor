@@ -34,6 +34,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 blessed-kotlin = { group = "com.github.weliem", name = "blessed-kotlin", version.ref = "blessed" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+mockk-android = { module = "io.mockk:mockk-android", version.ref = "mockk" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junitJupiter" }
 

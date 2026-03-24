@@ -158,21 +158,15 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
             is BleConnectionState.Scanning -> ScanningScreen(devices = state.discoveredDevices, onDeviceClicked = { viewModel.connectToDevice(it) })
             is BleConnectionState.Connected -> ConnectedScreen(co2Value = co2Value, onDisconnectClicked = { viewModel.disconnect() })
             is BleConnectionState.Error -> {
-                // Check if the error is due to permissions being denied
-                val isPermissionError = "permission" in state.message.lowercase()
-
-                if (isPermissionError) {
-                    ErrorScreen(
-                        message = state.message,
-                        onRerequestClicked = { activity.reRequestPermissions() },
-                        onSettingsClicked = { activity.openAppSettings() }
-                    )
-                } else {
-                    ErrorScreen(
-                        message = state.message,
-                        onRerequestClicked = { viewModel.startScan() }
-                    )
-                }
+                val isPermissionError = state.message.contains("permission", ignoreCase = true)
+                ErrorScreen(
+                    message = state.message,
+                    onRerequestClicked = {
+                        if (isPermissionError) activity.reRequestPermissions()
+                        else viewModel.startScan()
+                    },
+                    onSettingsClicked = if (isPermissionError) { { activity.openAppSettings() } } else null
+                )
             }
         }
     }
