@@ -14,15 +14,16 @@ import com.welie.blessed.BluetoothCentralManagerCallback
 import com.welie.blessed.BluetoothPeripheral
 import com.welie.blessed.BluetoothPeripheralCallback
 import com.welie.blessed.ConnectionPriority
-import com.welie.blessed.from16BitString
 import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
 import com.welie.blessed.ScanFailure
+import com.welie.blessed.from16BitString
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -49,7 +50,7 @@ object BluetoothHandler {
     private var isInitialized = false
 
     // Create a dedicated thread for BLE operations
-    internal val handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
+    internal lateinit var handlerThread: HandlerThread
     internal lateinit var bleHandler: Handler
 
     // Set the scope for launching coroutines
@@ -128,6 +129,22 @@ object BluetoothHandler {
                 centralManager = mockk(relaxed = true)
             }
         }
+    }
+
+    /**
+     * Used in instrumented testing to stop the bleHandler and handlerThread.
+     */
+    internal fun shutdown() {
+        scope.cancel()
+        scope = CoroutineScope(dispatcher + SupervisorJob())
+        if (::bleHandler.isInitialized) {
+            bleHandler.removeCallbacksAndMessages(null)
+        }
+        if (::handlerThread.isInitialized && handlerThread.isAlive) {
+            handlerThread.quitSafely()
+            handlerThread.join() // Block until the thread is fully dead
+        }
+        isInitialized = false
     }
 
     /**
@@ -352,6 +369,7 @@ object BluetoothHandler {
         Timber.plant(Timber.DebugTree())
 
         // Start the dedicated BLE thread and create its handler
+        handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
         handlerThread.start()
         bleHandler = Handler(handlerThread.looper)
 
