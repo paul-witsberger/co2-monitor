@@ -33,12 +33,14 @@ data class DiscoveredDevice(
  * [Scanning], [Connected], or [Error]).
  * @property Disconnected The device is not connected.
  * @property Scanning The device is scanning for BLE devices.
+ * @property Connecting The device is actively connecting to a peripheral.
  * @property Connected The device is connected to a peripheral.
  * @property Error The device encountered an error.
  */
 sealed interface BleConnectionState {
     object Disconnected : BleConnectionState
     data class Scanning(val discoveredDevices: List<DiscoveredDevice>) : BleConnectionState
+    data class Connecting(val deviceName: String?) : BleConnectionState
     data class Connected(val peripheral: BluetoothPeripheral) : BleConnectionState
     data class Error(val message: String) : BleConnectionState
 }
@@ -109,9 +111,11 @@ class SensorViewModel(private val application: Application) : ViewModel() {
     /**
      * Stops the current scan.
      */
-    // TODO make sure this is used somewhere
     fun stopScan() {
+        // Stop the actual scan
         BluetoothHandler.stopScan()
+        // Change the UI state to reflect the scan being stopped
+        _bleConnectionState.value = BleConnectionState.Disconnected
     }
 
     /**
@@ -130,6 +134,14 @@ class SensorViewModel(private val application: Application) : ViewModel() {
             BluetoothHandler.disconnect(it)
         }
     }
+
+//    fun clearDeviceCache(address: String) {
+//        BluetoothHandler.clearGattCache(address)
+//        // If the device was in an Error state, return to Disconnected state
+//        if (_bleConnectionState.value is BleConnectionState.Error) {
+//            _bleConnectionState.value = BleConnectionState.Disconnected
+//        }
+//    }
 }
 
 /**

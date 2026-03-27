@@ -158,10 +158,6 @@ object BluetoothHandler {
         override fun onServicesDiscovered(peripheral: BluetoothPeripheral) {
             Timber.i("Services discovered for ${peripheral.name}")
 
-            // Set connection priority to balanced and increase Maximum Transmission Unit from 23 to 185
-            peripheral.requestConnectionPriority(ConnectionPriority.BALANCED)
-//            peripheral.requestMtu(185)
-
             // Read DIS characteristics
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MANUFACTURER_NAME_CHARACTERISTIC_UUID)
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MODEL_NUMBER_CHARACTERISTIC_UUID)
@@ -193,6 +189,9 @@ object BluetoothHandler {
                     peripheral.startNotify(it)
                 }
             }
+
+            // Set connection priority to balanced after all services and characteristics have been discovered
+            peripheral.requestConnectionPriority(ConnectionPriority.BALANCED)
         }
 
         /**
@@ -304,6 +303,7 @@ object BluetoothHandler {
          * @param peripheral The peripheral that was connected.
          */
         override fun onConnected(peripheral: BluetoothPeripheral) {
+            peripheral.requestConnectionPriority(ConnectionPriority.HIGH)
             Timber.i("Connected to ${peripheral.name}")
             _bleConnectionState.value = BleConnectionState.Connected(peripheral)
         }
@@ -315,8 +315,13 @@ object BluetoothHandler {
          * @param status The HCI status of the (dis)connection.
          */
         override fun onDisconnected(peripheral: BluetoothPeripheral, status: HciStatus) {
-            Timber.i("Disconnected from ${peripheral.name}")
-            _bleConnectionState.value = BleConnectionState.Disconnected
+            Timber.i("Disconnected from ${peripheral.name}. Reason: $status")
+            if (status != HciStatus.SUCCESS) {
+                _bleConnectionState.value = BleConnectionState.Error("Disconnected with error: $status")
+            } else {
+                _bleConnectionState.value = BleConnectionState.Disconnected
+            }
+
             // Reset all sensor values on disconnect
             scope.launch {
                 _co2Value.emit(null)
@@ -333,7 +338,7 @@ object BluetoothHandler {
          */
         override fun onConnectionFailed(peripheral: BluetoothPeripheral, status: HciStatus) {
             Timber.e("Connection to ${peripheral.name} failed with status $status")
-            _bleConnectionState.value = BleConnectionState.Error("Connection failed")
+            _bleConnectionState.value = BleConnectionState.Error("Connection failed with status: $status \n(Error code: ${status.value})")
         }
 
         /**
@@ -382,7 +387,7 @@ object BluetoothHandler {
      * Starts a scan for BLE peripherals.
      */
     fun startScan() {
-        bleHandler.postDelayed({ stopScan() }, 15000) // Stop scan after 15 seconds
+//        bleHandler.postDelayed({ stopScan() }, 30000) // Stop scan after 30 seconds
         _bleConnectionState.value = BleConnectionState.Scanning(emptyList())
         centralManager.scanForPeripheralsWithServices(setOf(SENSOR_SERVICE_UUID))
     }
@@ -404,8 +409,9 @@ object BluetoothHandler {
      * @param peripheral The peripheral to connect to.
      */
     fun connect(peripheral: BluetoothPeripheral) {
+        bleHandler.removeCallbacksAndMessages(null)
         centralManager.stopScan()
-        _bleConnectionState.value = BleConnectionState.Connected(peripheral)
+        _bleConnectionState.value = BleConnectionState.Connecting(peripheral.name)
         centralManager.connect(peripheral, peripheralCallback)
     }
 
@@ -416,4 +422,5 @@ object BluetoothHandler {
     fun disconnect(peripheral: BluetoothPeripheral) {
         centralManager.cancelConnection(peripheral)
     }
+
 }

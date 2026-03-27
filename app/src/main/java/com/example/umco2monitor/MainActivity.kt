@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -108,6 +109,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Keep screen on for convenience - can remove this after development
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         // Request permissions based on Android version
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             requestMultiplePermissions.launch(arrayOf(
@@ -155,7 +159,12 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (val state = bleConnectionState) {
             is BleConnectionState.Disconnected -> DisconnectedScreen(onScanClicked = { viewModel.startScan() })
-            is BleConnectionState.Scanning -> ScanningScreen(devices = state.discoveredDevices, onDeviceClicked = { viewModel.connectToDevice(it) })
+            is BleConnectionState.Scanning -> ScanningScreen(
+                devices = state.discoveredDevices,
+                onDeviceClicked = { viewModel.connectToDevice(it) },
+                onStopScanClicked = { viewModel.stopScan() }
+            )
+            is BleConnectionState.Connecting -> ConnectingScreen(deviceName = state.deviceName)
             is BleConnectionState.Connected -> ConnectedScreen(co2Value = co2Value, onDisconnectClicked = { viewModel.disconnect() })
             is BleConnectionState.Error -> {
                 val isPermissionError = state.message.contains("permission", ignoreCase = true)
@@ -165,7 +174,8 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
                         if (isPermissionError) activity.reRequestPermissions()
                         else viewModel.startScan()
                     },
-                    onSettingsClicked = if (isPermissionError) { { activity.openAppSettings() } } else null
+                    onSettingsClicked = if (isPermissionError) { { activity.openAppSettings() } } else null,
+                    firstButtonText = "Restart Scan"
                 )
             }
         }
@@ -191,25 +201,49 @@ fun DisconnectedScreen(onScanClicked: () -> Unit) {
     }
 }
 
-// TODO Add a Stop Scan button that returns the user to the Disconnected screen
 /**
  * This screen is displayed when the app is scanning for BLE devices.
  * @param devices The list of discovered devices.
  * @param onDeviceClicked The action to perform when a device is clicked.
+ * @param onStopScanClicked The action to perform when the "Stop Scan" button is clicked.
  */
 @Composable
-fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit) {
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Scanning...", style = MaterialTheme.typography.titleLarge)
+fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit, onStopScanClicked: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Show "Scanning..." at the top of the screen
+        Text("Scanning...",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(modifier = Modifier.height(16.dp))
-        if (devices.isEmpty()) {
-            Text("No devices found yet...")
-        } else {
-            LazyColumn {
-                items(devices) { device ->
-                    DeviceListItem(device = device, onClick = { onDeviceClicked(device) })
+        // Either show the list of devices or a message if no devices have been found yet
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (devices.isEmpty()) {
+                Text("No devices found yet...", modifier = Modifier.align(Alignment.Center))
+            } else {
+                LazyColumn {
+                    items(devices) { device ->
+                        DeviceListItem(device = device, onClick = { onDeviceClicked(device) })
+                    }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Allow the user to stop scanning
+        Button(
+            onClick = onStopScanClicked,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            )
+        ) {
+            Text("Stop Scan")
         }
     }
 }
@@ -262,17 +296,45 @@ fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
     }
 }
 
-// TODO issue where when Bluetooth is turned off, the error screen only displayed the rerequest
-// TODO permissions button, not the go to settings button, and when pressed the app went to the
-// TODO scanning screen even though Bluetooth was still turned off
+/**
+ * This screen is displayed when the app is connecting to a BLE device.
+ * @param deviceName The name of the device being connected to.
+ */
+@Composable
+fun ConnectingScreen(deviceName: String?) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        CircularProgressIndicator()
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Connecting to ${deviceName ?: "Device"}...",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "This may take 1-2 minutes...",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+    }
+}
+
+// TODO Make sure the appropriate permissions are set before allowing the transition to the scanning screen
 /**
  * This screen is displayed when an error occurs.
  * @param message The error message to display.
  * @param onRerequestClicked The action to perform when the "Rerequest Permissions" button is clicked.
  * @param onSettingsClicked The action to perform when the "Go to Settings" button is clicked.
+ * @param firstButtonText The text to display on the first button. Defaults to "Rerequest Permissions", but for other errors it can be something else.
  */
 @Composable
-fun ErrorScreen(message: String, onRerequestClicked: (() -> Unit)? = null, onSettingsClicked: (() -> Unit)? = null) {
+fun ErrorScreen(
+    message: String,
+    onRerequestClicked: (() -> Unit)? = null,
+    onSettingsClicked: (() -> Unit)? = null,
+    firstButtonText: String = "Rerequest Permissions") {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -289,7 +351,7 @@ fun ErrorScreen(message: String, onRerequestClicked: (() -> Unit)? = null, onSet
         ) {
             onRerequestClicked?.let { onClick ->
                 Button(onClick = onClick) {
-                    Text("Rerequest Permissions")
+                    Text(firstButtonText)
                 }
             }
             onSettingsClicked?.let { onClick ->
