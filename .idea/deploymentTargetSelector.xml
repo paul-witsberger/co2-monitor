@@ -4,10 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="baseline_emptyTest()">
-        <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-03-26T20:32:14.721879200Z">
+        <DropdownSelection timestamp="2026-03-31T14:25:45.655132100Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="PhysicalDevice" identifier="serial=29071FDH2005BF" />
@@ -16,17 +13,28 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
+      <SelectionState runConfigName="connectedScreen_nullCo2_showsDashes()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="connectedScreen_nullValues_showMultipleDashes()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="connectedScreen_nullValues_showDashes()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="MainActivityInstrumentedTest">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
       <SelectionState runConfigName="mainScreen_errorRouting_permissionLogic()">
         <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="mainScreen_errorRouting_genericLogic()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="mainScreen_disconnectButton_callsViewModel()">
-        <option name="selectionMode" value="DROPDOWN" />
-      </SelectionState>
-      <SelectionState runConfigName="mainScreen_scanButton_callsViewModel()">
-        <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2026-03-31T19:41:12.621568600Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=29071FDH2005BF" />
+            </handle>
+          </Target>
+        </DropdownSelection>
+        <DialogSelection />
       </SelectionState>
     </selectionStates>
   </component>

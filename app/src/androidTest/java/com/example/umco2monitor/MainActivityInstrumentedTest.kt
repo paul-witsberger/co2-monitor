@@ -18,8 +18,8 @@ class MainActivityInstrumentedTest {
     // Explicit flows to prevent UI "hanging" while waiting for data
     private val mockState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
     private val mockCo2 = MutableStateFlow<UShort?>(null)
-    private val mockTemp = MutableStateFlow<Short?>(null)
-    private val mockHum = MutableStateFlow<UShort?>(null)
+    private val mockTemp = MutableStateFlow<Float?>(null)
+    private val mockHum = MutableStateFlow<Float?>(null)
     private val mockBatt = MutableStateFlow<UInt?>(null)
 
     @Before
@@ -59,7 +59,7 @@ class MainActivityInstrumentedTest {
     @Test
     fun connectedScreen_displaysCo2Value() {
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = 450u, onDisconnectClicked = {})
+            ConnectedScreen(co2Value = 450u, temperatureValue = 72.14f, humidityValue = 93.4f, onDisconnectClicked = {})
         }
         composeTestRule.onNodeWithText("450").assertIsDisplayed()
         composeTestRule.onNodeWithText("ppm").assertIsDisplayed()
@@ -83,7 +83,7 @@ class MainActivityInstrumentedTest {
     @Test
     fun scanningScreen_emptyState_showsNoDevicesMessage() {
         composeTestRule.setContent {
-            ScanningScreen(devices = emptyList(), onDeviceClicked = {})
+            ScanningScreen(devices = emptyList(), onDeviceClicked = {}, onStopScanClicked = {})
         }
         composeTestRule.onNodeWithText("Scanning...").assertIsDisplayed()
         composeTestRule.onNodeWithText("No devices found yet...").assertIsDisplayed()
@@ -96,7 +96,7 @@ class MainActivityInstrumentedTest {
             DiscoveredDevice(null, "AA:BB:CC:DD:EE:FF", mockk(relaxed = true))
         )
         composeTestRule.setContent {
-            ScanningScreen(devices = devices, onDeviceClicked = {})
+            ScanningScreen(devices = devices, onDeviceClicked = {}, onStopScanClicked = {})
         }
         composeTestRule.onNodeWithText("Sensor A").assertIsDisplayed()
         composeTestRule.onNodeWithText("Unknown Device").assertIsDisplayed()
@@ -107,7 +107,7 @@ class MainActivityInstrumentedTest {
         val device = DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true))
         var clickedDevice: DiscoveredDevice? = null
         composeTestRule.setContent {
-            ScanningScreen(devices = listOf(device), onDeviceClicked = { clickedDevice = it })
+            ScanningScreen(devices = listOf(device), onDeviceClicked = { clickedDevice = it }, onStopScanClicked = {})
         }
         composeTestRule.onNodeWithText("Sensor A").performClick()
         assert(clickedDevice == device)
@@ -116,16 +116,16 @@ class MainActivityInstrumentedTest {
     @Test
     fun connectedScreen_nullCo2_showsDashes() {
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = null, onDisconnectClicked = {})
+            ConnectedScreen(co2Value = null, temperatureValue = null, humidityValue = null, onDisconnectClicked = {})
         }
-        composeTestRule.onNodeWithText("--").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("--").onFirst().assertIsDisplayed()
     }
 
     @Test
     fun connectedScreen_disconnectButton_invokesCallback() {
         var disconnectClicked = false
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = 400u, onDisconnectClicked = { disconnectClicked = true })
+            ConnectedScreen(co2Value = 400u, temperatureValue = 72.14f, humidityValue = 93.4f, onDisconnectClicked = { disconnectClicked = true })
         }
         composeTestRule.onNodeWithText("Disconnect").performClick()
         assert(disconnectClicked)
@@ -160,6 +160,8 @@ class MainActivityInstrumentedTest {
         val mockViewModel = mockk<SensorViewModel>(relaxed = true)
         every { mockViewModel.bleConnectionState } returns mockState
         every { mockViewModel.co2Value } returns mockCo2
+        every { mockViewModel.temperatureValue } returns mockTemp
+        every { mockViewModel.humidityValue } returns mockHum
 
         composeTestRule.setContent {
             MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))
@@ -213,7 +215,7 @@ class MainActivityInstrumentedTest {
         mockState.value = BleConnectionState.Error("Device Busy")
 
         // THEN: Button should call startScan instead of reRequest
-        composeTestRule.onNodeWithText("Rerequest Permissions").performClick()
+        composeTestRule.onNodeWithText("Restart Scan").assertIsDisplayed().performClick()
         verify { mockViewModel.startScan() }
         verify(exactly = 0) { mockActivity.reRequestPermissions() }
 
@@ -226,6 +228,8 @@ class MainActivityInstrumentedTest {
         val mockViewModel = mockk<SensorViewModel>(relaxed = true)
         every { mockViewModel.bleConnectionState } returns mockState
         every { mockViewModel.co2Value } returns mockCo2
+        every { mockViewModel.temperatureValue } returns mockTemp
+        every { mockViewModel.humidityValue } returns mockHum
 
         composeTestRule.setContent {
             MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))

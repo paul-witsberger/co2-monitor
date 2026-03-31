@@ -30,8 +30,8 @@ class SensorViewModelTest {
 
     private val mockBleState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
     private val mockCo2Value = MutableStateFlow<UShort?>(null)
-    private val mockTemp = MutableStateFlow<Short?>(null)
-    private val mockHum = MutableStateFlow<UShort?>(null)
+    private val mockTemp = MutableStateFlow<Float?>(null)
+    private val mockHum = MutableStateFlow<Float?>(null)
     private val mockBatt = MutableStateFlow<UInt?>(null)
 
     @BeforeEach

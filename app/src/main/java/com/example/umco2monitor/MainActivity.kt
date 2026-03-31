@@ -182,7 +182,7 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
                         else viewModel.startScan()
                     },
                     onSettingsClicked = if (isPermissionError) { { activity.openAppSettings() } } else null,
-                    firstButtonText = "Restart Scan"
+                    firstButtonText = if (isPermissionError) "Rerequest Permissions" else "Restart Scan"
                 )
             }
         }

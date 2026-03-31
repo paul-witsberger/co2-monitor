@@ -22,6 +22,7 @@
               <option name="preferredColumnWidths">
                 <map>
                   <entry key="Duration" value="90" />
+                  <entry key="Google Pixel 7" value="120" />
                   <entry key="Medium_Phone" value="120" />
                   <entry key="Tests" value="360" />
                 </map>
@@ -84,7 +85,33 @@
             </AndroidTestResultsTableState>
           </value>
         </entry>
+        <entry key="-743780086">
+          <value>
+            <AndroidTestResultsTableState>
+              <option name="preferredColumnWidths">
+                <map>
+                  <entry key="Duration" value="90" />
+                  <entry key="Google Pixel 7" value="120" />
+                  <entry key="Tests" value="360" />
+                </map>
+              </option>
+            </AndroidTestResultsTableState>
+          </value>
+        </entry>
         <entry key="-594825205">
+          <value>
+            <AndroidTestResultsTableState>
+              <option name="preferredColumnWidths">
+                <map>
+                  <entry key="Duration" value="90" />
+                  <entry key="Google Pixel 7" value="120" />
+                  <entry key="Tests" value="360" />
+                </map>
+              </option>
+            </AndroidTestResultsTableState>
+          </value>
+        </entry>
+        <entry key="-552359462">
           <value>
             <AndroidTestResultsTableState>
               <option name="preferredColumnWidths">
