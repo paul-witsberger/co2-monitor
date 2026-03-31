@@ -73,8 +73,8 @@ const char* batteryLevelCharacteristicUUID = "2A19";
 BLEService co2Service(co2ServiceUUID);
 BLEUnsignedIntCharacteristic co2Characteristic(co2CharacteristicUUID, BLERead | BLENotify | BLEIndicate);
 BLEService essService(essServiceUUID);
-BLEFloatCharacteristic temperatureCharacteristic(temperatureCharacteristicUUID, BLERead | BLENotify);
-BLEFloatCharacteristic humidityCharacteristic(humidityCharacteristicUUID, BLERead | BLENotify);
+BLEIntCharacteristic temperatureCharacteristic(temperatureCharacteristicUUID, BLERead | BLENotify);
+BLEUnsignedIntCharacteristic humidityCharacteristic(humidityCharacteristicUUID, BLERead | BLENotify);
 BLEService disService(disServiceUUID);
 BLEByteCharacteristic manufacturerNameCharacteristic(manufacturerNameCharacteristicUUID, BLERead);
 BLEByteCharacteristic modelNumberCharacteristic(modelNumberCharacteristicUUID, BLERead);
@@ -216,7 +216,10 @@ void setup() {
 
   BLE.advertise();
 
-  Serial.println("CO2 [ppm], Temperature [F], Relative Humidity [%]");
+  Serial.println();
+  Serial.println("Avg CO2 [ppm], Curr CO2 [ppm], Avg Temp [F], Curr Temp [F], Avg RelHum [%], Curr RelHum [%]");
+  Serial.println();
+
 }
 
 void loop() {
@@ -225,10 +228,10 @@ void loop() {
 
   // Connect to central device
   BLEDevice central = BLE.central();
-  Serial.println("Discovering central device...");
+  // Serial.println("Discovering central device...");
   
   if (central && central.connected()) {
-    Serial.println("Connected!");
+    // Serial.println("Connected!");
     dataReady = false;
     err = sensor.getDataReadyStatus(dataReady);
 
@@ -283,32 +286,32 @@ void getReadings(float *readingsArr, size_t numElements) {
     movingAverage(readingCO2, readingTemp, readingHumid);
   }
 
-    // Print the information
-    Serial.print(avgCO2);
-    Serial.print(" , ");
-    Serial.print(readingCO2);
-    Serial.print("  |  ");
-    Serial.print(avgTemp * 9 / 5 + 32);
-    Serial.print(" , ");
-    Serial.print(readingTemp * 9 / 5 + 32);
-    Serial.print("  |  ");
-    Serial.print(avgHumid);
-    Serial.print(" , ");
-    Serial.print(readingHumid);
-    Serial.println();
+  // Print the information
+  Serial.print((uint16_t)avgCO2);
+  Serial.print(" , ");
+  Serial.print(readingCO2);
+  Serial.print(" , ");
+  Serial.print(avgTemp * 9 / 5 + 32);
+  Serial.print(" , ");
+  Serial.print(readingTemp * 9 / 5 + 32);
+  Serial.print(" , ");
+  Serial.print(avgHumid);
+  Serial.print(" , ");
+  Serial.print(readingHumid);
+  Serial.println();
 
-    // Store the readings
-    readingsArr[0] = readingCO2;
-    readingsArr[1] = readingTemp;
-    readingsArr[2] = readingHumid;
-    readingsArr[3] = avgCO2;
-    readingsArr[4] = avgTemp;
-    readingsArr[5] = avgHumid;
+  // Store the readings
+  readingsArr[0] = readingCO2;
+  readingsArr[1] = readingTemp;
+  readingsArr[2] = readingHumid;
+  readingsArr[3] = avgCO2;
+  readingsArr[4] = avgTemp;
+  readingsArr[5] = avgHumid;
 }
 
 // Write new values for CO2, temperature, and humidity; these will all notify the central device
 void transmitReadings(float *readingsArr, size_t numElements) {
-  co2Characteristic.writeValue(readingsArr[0]);
-  temperatureCharacteristic.writeValue(readingsArr[1]);
-  humidityCharacteristic.writeValue(readingsArr[2]);
+  co2Characteristic.writeValue((uint16_t)readingsArr[0]);
+  temperatureCharacteristic.writeValue((int16_t)(readingsArr[1] * 100.0));
+  humidityCharacteristic.writeValue((uint16_t)(readingsArr[2] * 100.0));
 }

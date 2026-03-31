@@ -155,6 +155,8 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Modifier = Modifier) {
     val bleConnectionState by viewModel.bleConnectionState.collectAsState()
     val co2Value by viewModel.co2Value.collectAsState()
+    val temperatureValue by viewModel.temperatureValue.collectAsState()
+    val humidityValue by viewModel.humidityValue.collectAsState()
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (val state = bleConnectionState) {
@@ -165,7 +167,12 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
                 onStopScanClicked = { viewModel.stopScan() }
             )
             is BleConnectionState.Connecting -> ConnectingScreen(deviceName = state.deviceName)
-            is BleConnectionState.Connected -> ConnectedScreen(co2Value = co2Value, onDisconnectClicked = { viewModel.disconnect() })
+            is BleConnectionState.Connected -> ConnectedScreen(
+                co2Value = co2Value,
+                temperatureValue = temperatureValue,
+                humidityValue = humidityValue,
+                onDisconnectClicked = { viewModel.disconnect() }
+            )
             is BleConnectionState.Error -> {
                 val isPermissionError = state.message.contains("permission", ignoreCase = true)
                 ErrorScreen(
@@ -273,23 +280,60 @@ fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
 /**
  * This screen is displayed when the app is connected to a BLE device.
  * @param co2Value The current CO2 value.
+ * @param temperatureValue The current temperature value.
+ * @param humidityValue The current humidity value.
  * @param onDisconnectClicked The action to perform when the "Disconnect" button is clicked.
  */
 @Composable
-fun ConnectedScreen(co2Value: UShort?, onDisconnectClicked: () -> Unit) {
+fun ConnectedScreen(    co2Value: UShort?,
+                        temperatureValue: Float?,
+                        humidityValue: Float?,
+                        onDisconnectClicked: () -> Unit
+) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("CO2 Reading", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(8.dp))
+        // --- CO2 SECTION (Hero/Emphasis) ---
+        Text("CO2 CONCENTRATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
         Text(
             text = co2Value?.toString() ?: "--",
-            style = MaterialTheme.typography.displayLarge
+            style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
         )
-        Text("ppm")
-        Spacer(modifier = Modifier.height(32.dp))
+        Text("ppm", style = MaterialTheme.typography.titleMedium)
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // --- SECONDARY DATA SECTION (Smaller, side-by-side) ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Temperature
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("TEMPERATURE", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    text = temperatureValue?.let { "%.1f".format(it) } ?: "--",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text("°F", style = MaterialTheme.typography.bodySmall)
+            }
+
+            // Humidity
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("HUMIDITY", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    text = humidityValue?.let { "%.1f".format(it) } ?: "--",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text("%", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(64.dp))
+
         Button(onClick = onDisconnectClicked) {
             Text("Disconnect")
         }
@@ -314,7 +358,7 @@ fun ConnectingScreen(deviceName: String?) {
             style = MaterialTheme.typography.titleMedium
         )
         Text(
-            text = "This may take 1-2 minutes...",
+            text = "This should take 5-10 seconds...",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )

@@ -70,13 +70,13 @@ object BluetoothHandler {
      */
     val co2Value = _co2Value.asStateFlow()
 
-    private val _temperatureValue = MutableStateFlow<Short?>(null)
+    private val _temperatureValue = MutableStateFlow<Float?>(null)
     /**
      * Public state flow for temperature value.
      */
     val temperatureValue = _temperatureValue.asStateFlow()
 
-    private val _humidityValue = MutableStateFlow<UShort?>(null)
+    private val _humidityValue = MutableStateFlow<Float?>(null)
     /**
      * Public state flow for humidity value.
      */
@@ -235,31 +235,24 @@ object BluetoothHandler {
 
             when (characteristic.uuid) {
                 CO2_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for a 16-bit unsigned integer (2)
-                    if (value.size >= 2) {
-                        val co2: UShort = parser.getUInt16()
-                        Timber.i("Received CO2 value: $co2")
-                        scope.launch { _co2Value.emit(co2) }
-                    }
+                    val co2: UShort = parser.getUInt16()
+                    Timber.i("Received CO2 value: $co2")
+                    scope.launch { _co2Value.emit(co2) }
                 }
 
                 TEMPERATURE_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for a 16-bit signed integer (2)
-                    if (value.size >= 2) {
-                        val rawTemp: Short = parser.getInt16()
-                        val temp: Short = (rawTemp / 100.0).toInt().toShort()
-                        Timber.i("Received Temperature value: $temp")
-                        scope.launch { _temperatureValue.emit(temp) }
-                    }
+                    val rawTemp: Short = parser.getInt16()
+                    val tempC: Float = rawTemp / 100.0f
+                    val temp: Float = (tempC * 9.0f / 5.0f) + 32f
+                    Timber.i("Received Temperature value: $temp")
+                    scope.launch { _temperatureValue.emit(temp) }
                 }
 
                 HUMIDITY_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for a 16-bit unsigned integer (2)
-                    if (value.size >= 2) {
-                        val humidity: UShort = parser.getUInt16()
-                        Timber.i("Received Humidity value: $humidity")
-                        scope.launch { _humidityValue.emit(humidity) }
-                    }
+                    val rawHumidity: UShort = parser.getUInt16()
+                    val humidity: Float = rawHumidity.toFloat() / 100.0f
+                    Timber.i("Received Humidity value: $humidity")
+                    scope.launch { _humidityValue.emit(humidity) }
                 }
 
                 BATTERY_LEVEL_CHARACTERISTIC_UUID -> {
