@@ -8,12 +8,18 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.room.Room
 import com.welie.blessed.BluetoothPeripheral
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
+import kotlin.time.Instant
 
 /**
  * Data class representing a discovered BLE device.
@@ -46,6 +52,20 @@ sealed interface BleConnectionState {
 }
 
 /**
+ * Data class representing sensor data, including CO2, temperature, humidity, and a timestamp.
+ * @property co2Value The CO2 value, in parts per million.
+ * @property temperatureValue The temperature value, in degrees Fahrenheit.
+ * @property humidityValue The humidity value, as a percentage.
+ * @property timestamp The timestamp of the data, as an Instant object.
+ */
+data class SensorData(
+    val co2Value: UShort,
+    val temperatureValue: Float,
+    val humidityValue: Float,
+    val timestamp: Instant
+)
+
+/**
  * The central ViewModel for the application. This class acts as a bridge between the UI layer
  * ([MainActivity]) and the data layer ([BluetoothHandler]). It exposes state information (like
  * connection status and sensor values) to the UI and provides functions that delegate user actions
@@ -53,7 +73,7 @@ sealed interface BleConnectionState {
  * @param application The application context.
  */
 class SensorViewModel(private val application: Application) : ViewModel() {
-    private val _bleConnectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
+    private val _bleConnectionState: MutableStateFlow<BleConnectionState> = MutableStateFlow(BleConnectionState.Disconnected)
     /**
      * Holds the state of the BLE connection, which is updated indirectly via BluetoothHandler.
      */
@@ -79,11 +99,44 @@ class SensorViewModel(private val application: Application) : ViewModel() {
      */
     val batteryLevel: StateFlow<UInt?> = BluetoothHandler.batteryLevel
 
+    // Initialize the Room database and DAO
+    private val db: SensorDatabase = Room.databaseBuilder(
+        application,
+        SensorDatabase::class.java,
+        "sensor_database"
+    ).build()
+    private val sensorDataDao: SensorDataDao = db.sensorDataDao()
+
+    /**
+     * The history of sensor data, which is updated indirectly via BluetoothHandler.
+     */
+    // TODO check that the timeout in SharingStarted.WhileSubscribed is appropriate
+    val history = sensorDataDao.getAllReadings().map{ entities -> entities.map {
+        SensorData(it.co2Reading, it.temperatureReading, it.humidityReading, it.timestamp)
+    } } .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Initialize the BluetoothHandler when the ViewModel is created.
     init {
         BluetoothHandler.initialize(application)
+
+        // Update connection state
         BluetoothHandler.bleConnectionState.onEach { state ->
             _bleConnectionState.value = state
+        }.launchIn(viewModelScope)
+
+        // Capture data and save to Database
+        combine(
+            BluetoothHandler.co2Value,
+            BluetoothHandler.temperatureValue,
+            BluetoothHandler.humidityValue,
+        ) { co2, temperature, humidity ->
+            if(co2 != null && temperature != null && humidity != null) {
+                SensorDataEntity(co2Reading = co2, temperatureReading = temperature, humidityReading = humidity)
+            } else {
+                null
+            }
+        }.onEach { entity ->
+            entity?.let { sensorDataDao.insert(it) }
         }.launchIn(viewModelScope)
     }
 
