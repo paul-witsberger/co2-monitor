@@ -7,13 +7,13 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.welie.blessed.BluetoothPeripheral
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
@@ -54,14 +54,14 @@ data class HistorySettings(
     val showCo2: Boolean = true,
     val showTemperature: Boolean = true,
     val showHumidity: Boolean = true,
-    val timeRangeHours: Int = 1
+    val timeRange: Duration = 1.hours
 )
 
 /**
  * The central ViewModel for the application.
  * Now refactored to be "read-only" regarding history, observing the database through [SensorRepository].
  */
-class SensorViewModel(application: Application) : AndroidViewModel(application) {
+class SensorViewModel(private val application: Application) : ViewModel() {
     
     private val repository = SensorRepository(SensorDatabase.getInstance(application).sensorDataDao())
 
@@ -88,7 +88,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         repository.allReadings,
         _historySettings
     ) { entities, settings ->
-        val cutoff = kotlin.time.Clock.System.now() - settings.timeRangeHours.hours
+        val cutoff = kotlin.time.Clock.System.now() - settings.timeRange
         val filtered = entities.filter { it.timestamp >= cutoff }
         
         // Sampling logic: limit to ~300 points for the plot to keep it responsive
@@ -116,14 +116,14 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         showCo2: Boolean? = null,
         showTemperature: Boolean? = null,
         showHumidity: Boolean? = null,
-        timeRangeHours: Int? = null
+        timeRange: Duration? = null
     ) {
         _historySettings.update { current ->
             current.copy(
                 showCo2 = showCo2 ?: current.showCo2,
                 showTemperature = showTemperature ?: current.showTemperature,
                 showHumidity = showHumidity ?: current.showHumidity,
-                timeRangeHours = timeRangeHours ?: current.timeRangeHours
+                timeRange = timeRange ?: current.timeRange
             )
         }
     }
@@ -134,8 +134,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startScan(sdkInt: Int = Build.VERSION.SDK_INT) {
         if (sdkInt >= Build.VERSION_CODES.S &&
-            (ActivityCompat.checkSelfPermission(getApplication(), Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
-             ActivityCompat.checkSelfPermission(getApplication(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
+            (ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
+             ActivityCompat.checkSelfPermission(application, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
         ) {
             onPermissionsDenied()
             return

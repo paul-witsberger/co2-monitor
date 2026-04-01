@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.compose.ui.geometry)
     ksp(libs.androidx.room.compiler)
     
     // mockk is needed in implementation because BluetoothHandler.kt (main) uses it for reset()

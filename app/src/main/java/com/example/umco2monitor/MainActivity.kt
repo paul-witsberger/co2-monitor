@@ -23,15 +23,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -53,21 +63,16 @@ class MainActivity : ComponentActivity() {
         }
 
     fun reRequestPermissions() {
-        // Create a mutable list to hold permissions
         val permissionsToRequest = mutableListOf<String>()
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
             permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-
-        // Add notification permission for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-
         requestMultiplePermissions.launch(permissionsToRequest.toTypedArray())
     }
 
@@ -149,7 +154,7 @@ fun ConnectedScreen(viewModel: SensorViewModel) {
     val selectedTab by viewModel.selectedTab.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SecondaryTabRow (selectedTabIndex = selectedTab) {
+        PrimaryTabRow (selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { viewModel.setSelectedTab(0) }, text = { Text("Live") })
             Tab(selected = selectedTab == 1, onClick = { viewModel.setSelectedTab(1) }, text = { Text("History") })
         }
@@ -200,75 +205,167 @@ fun HistoryView(viewModel: SensorViewModel) {
     val history by viewModel.history.collectAsState()
     val settings by viewModel.historySettings.collectAsState()
 
+    val timeRanges = listOf(
+        "1H" to 1.hours,
+        "6H" to 6.hours,
+        "24H" to 24.hours,
+        "7D" to 7.days
+    )
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Sensor History", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.DarkGray).padding(8.dp)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.DarkGray.copy(alpha = 0.8f))
+                // Future pan/zoom can be implemented using the pointerInput modifier
+                .pointerInput(Unit) {
+                    // detectTransformGestures { _, pan, zoom, _ -> ... }
+                }
+        ) {
             SensorPlot(data = history, settings = settings)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Time Range Selection
+        Text("Time Range", style = MaterialTheme.typography.labelLarge)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            timeRanges.forEach { (label, duration) ->
+                FilterChip(
+                    selected = settings.timeRange == duration,
+                    onClick = { viewModel.updateHistorySettings(timeRange = duration) },
+                    label = { Text(label) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Visible Sensors Selection
         Text("Visible Sensors", style = MaterialTheme.typography.labelLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             FilterChip(selected = settings.showCo2, onClick = { viewModel.updateHistorySettings(showCo2 = !settings.showCo2) }, label = { Text("CO2") })
             FilterChip(selected = settings.showTemperature, onClick = { viewModel.updateHistorySettings(showTemperature = !settings.showTemperature) }, label = { Text("Temp") })
             FilterChip(selected = settings.showHumidity, onClick = { viewModel.updateHistorySettings(showHumidity = !settings.showHumidity) }, label = { Text("Humid") })
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Time Range: ${settings.timeRangeHours} hours", style = MaterialTheme.typography.labelLarge)
-        Slider(value = settings.timeRangeHours.toFloat(), onValueChange = { viewModel.updateHistorySettings(timeRangeHours = it.toInt()) }, valueRange = 1f..24f, steps = 23)
     }
 }
 
 @Composable
 fun SensorPlot(data: List<SensorData>, settings: HistorySettings) {
     val maize = colorResource(id = R.color.michigan_maize)
-    
-    // Calculate real-time window bounds
-    val now = Clock.System.now()
-    val maxTime = now.toEpochMilliseconds()
-    val minTime = (now - settings.timeRangeHours.hours).toEpochMilliseconds()
-    val timeRangeWidth = (maxTime - minTime).toFloat()
+    val textPaint = Paint().asFrameworkPaint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.WHITE
+        textSize = 12.sp.value
+    }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
+        val padding = 20.dp.toPx() // Padding for labels
         if (data.isEmpty()) return@Canvas
 
-        fun getX(timestamp: Long) = (timestamp - minTime) / timeRangeWidth * size.width
+        val now = Clock.System.now()
+        val maxTime = now.toEpochMilliseconds()
+        val minTime = (now - settings.timeRange).toEpochMilliseconds()
+        val timeRangeWidth = (maxTime - minTime).toFloat()
 
-        // Gap threshold logic:
-        // Expected interval if 300 points are spread across the time window.
-        val expectedInterval = timeRangeWidth / 300f
-        // Threshold: 3x the expected interval, or at least 20 seconds.
-        val maxGapMs = maxOf(20000f, expectedInterval * 3f).toLong()
+        fun getX(timestamp: Long) = padding + (timestamp - minTime) / timeRangeWidth * (size.width - 2 * padding)
 
-        // Independent dynamic scaling for each sensor with buffer
+        // Find min/max for CO2 to set the primary Y-axis
+        val co2Values = if (settings.showCo2) data.map { it.co2Value.toFloat() } else emptyList()
+        val minCo2 = co2Values.minOrNull() ?: 400f
+        val maxCo2 = co2Values.maxOrNull() ?: 2000f
+        val co2Spread = (maxCo2 - minCo2).coerceAtLeast(100f)
+        val yMinCo2 = minCo2 - co2Spread * 0.1f
+        val yMaxCo2 = maxCo2 + co2Spread * 0.1f
+
+        // Draw Y-axis grid lines and labels for CO2
+        val gridLines = 5
+        val co2NiceRange = getNiceRange(yMinCo2.toDouble(), yMaxCo2.toDouble(), gridLines)
+        for (i in 0..gridLines) {
+            val value = co2NiceRange.first + i * (co2NiceRange.second - co2NiceRange.first) / gridLines
+            val y = size.height - padding - ((value - yMinCo2) / (yMaxCo2 - yMinCo2) * (size.height - 2 * padding)).toFloat()
+            drawLine(
+                color = Color.Gray,
+                start = Offset(padding, y),
+                end = Offset(size.width - padding, y),
+                strokeWidth = 1f
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                "${value.toInt()}",
+                0f,
+                y + textPaint.textSize / 2,
+                textPaint
+            )
+        }
+        
+        // Draw X-axis tick marks and labels
+        val xGridLines = 4
+        for (i in 0..xGridLines) {
+            val timestamp = minTime + i * timeRangeWidth.toLong() / xGridLines
+            val x = getX(timestamp)
+            drawLine(
+                color = Color.Gray,
+                start = Offset(x, size.height - padding),
+                end = Offset(x, size.height - padding + 5.dp.toPx())
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                formatTimestamp(timestamp, settings.timeRange),
+                x - textPaint.measureText(formatTimestamp(timestamp, settings.timeRange)) / 2,
+                size.height,
+                textPaint
+            )
+        }
+
+        val maxGapMs = maxOf(20000f, timeRangeWidth / 300f * 3f).toLong()
+
         if (settings.showCo2) {
-            val values = data.map { it.co2Value.toFloat() }
-            val min = values.minOrNull() ?: 400f
-            val max = values.maxOrNull() ?: 2000f
-            val spread = (max - min).coerceAtLeast(100f)
-            drawSeries(data, { it.co2Value.toFloat() }, min - (spread * 0.1f), max + (spread * 0.1f), maize, ::getX, maxGapMs)
+            drawSeries(data, { it.co2Value.toFloat() }, yMinCo2, yMaxCo2, maize, ::getX, maxGapMs, padding)
         }
         
         if (settings.showTemperature) {
-            val values = data.map { it.temperatureValue }
-            val min = values.minOrNull() ?: 60f
-            val max = values.maxOrNull() ?: 100f
-            val spread = (max - min).coerceAtLeast(5f)
-            drawSeries(data, { it.temperatureValue }, min - (spread * 0.1f), max + (spread * 0.1f), Color.Red, ::getX, maxGapMs)
+            val tempValues = data.map { it.temperatureValue }
+            val minTemp = tempValues.minOrNull() ?: 60f
+            val maxTemp = tempValues.maxOrNull() ?: 100f
+            val tempSpread = (maxTemp - minTemp).coerceAtLeast(5f)
+            drawSeries(data, { it.temperatureValue }, minTemp - tempSpread * 0.1f, maxTemp + tempSpread * 0.1f, Color.Red, ::getX, maxGapMs, padding)
         }
 
         if (settings.showHumidity) {
-            val values = data.map { it.humidityValue }
-            val min = values.minOrNull() ?: 0f
-            val max = values.maxOrNull() ?: 100f
-            val spread = (max - min).coerceAtLeast(5f)
-            drawSeries(data, { it.humidityValue }, min - (spread * 0.1f), max + (spread * 0.1f), Color.Cyan, ::getX, maxGapMs)
+            val humidValues = data.map { it.humidityValue }
+            val minHumid = humidValues.minOrNull() ?: 0f
+            val maxHumid = humidValues.maxOrNull() ?: 100f
+            val humidSpread = (maxHumid - minHumid).coerceAtLeast(5f)
+            drawSeries(data, { it.humidityValue }, minHumid - humidSpread * 0.1f, maxHumid + humidSpread * 0.1f, Color.Cyan, ::getX, maxGapMs, padding)
         }
     }
+}
+
+private fun formatTimestamp(timestamp: Long, range: Duration): String {
+    val format = if (range > 2.days) "MM/dd" else "HH:mm"
+    return SimpleDateFormat(format, Locale.getDefault()).format(Date(timestamp))
+}
+
+private fun getNiceRange(min: Double, max: Double, ticks: Int): Pair<Double, Double> {
+    val range = max - min
+    if (range == 0.0) return Pair(min - 1, max + 1)
+    val tickSpacing = range / ticks
+    val magnitude = 10.0.pow(floor(log10(tickSpacing)))
+    val residual = tickSpacing / magnitude
+    
+    val niceTick = when {
+        residual > 5 -> 10 * magnitude
+        residual > 2 -> 5 * magnitude
+        else -> 2 * magnitude
+    }
+    
+    val niceMin = floor(min / niceTick) * niceTick
+    val niceMax = kotlin.math.ceil(max / niceTick) * niceTick
+    return Pair(niceMin, niceMax)
 }
 
 fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
@@ -278,7 +375,8 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
     maxVal: Float, 
     color: Color, 
     getX: (Long) -> Float,
-    maxGapMs: Long
+    maxGapMs: Long,
+    padding: Float
 ) {
     val path = Path()
     var lastTimestamp: Long? = null
@@ -287,19 +385,18 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
         val currentTimestamp = sensorData.timestamp.toEpochMilliseconds()
         val x = getX(currentTimestamp)
         
-        // Skip points that are off-screen to the left (older than the window)
-        if (x < 0) return@forEachIndexed
+        if (x < padding) return@forEachIndexed
 
         val rawY = valueSelector(sensorData)
         val normalizedY = if (maxVal == minVal) 0.5f else (rawY - minVal) / (maxVal - minVal)
-        val y = size.height - (normalizedY.coerceIn(0f, 1f) * size.height)
+        val y = (size.height - padding) - (normalizedY.coerceIn(0f, 1f) * (size.height - 2 * padding))
 
         if (index == 0) {
             path.moveTo(x, y)
         } else {
             val gap = currentTimestamp - (lastTimestamp ?: currentTimestamp)
             if (gap > maxGapMs) {
-                path.moveTo(x, y) // Discontinuity: skip drawing a line
+                path.moveTo(x, y) 
             } else {
                 path.lineTo(x, y)
             }

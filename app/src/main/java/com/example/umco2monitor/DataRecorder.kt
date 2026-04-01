@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.Manifest
-import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -85,15 +84,13 @@ class DataRecorder(
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                ALARM_CHANNEL_ID,
-                "Sensor Alarms",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications for critical sensor alerts"
-            }
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            ALARM_CHANNEL_ID,
+            "Sensor Alarms",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notifications for critical sensor alerts"
         }
+        notificationManager.createNotificationChannel(channel)
     }
 }
