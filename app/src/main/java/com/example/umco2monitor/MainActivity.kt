@@ -13,150 +13,113 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
 
 /**
  * Main activity of the application. This is the entry point of the app.
  */
 class MainActivity : ComponentActivity() {
-    /*
-    The ViewModel for this activity. This stores the current state of the app. "by viewModels"
-    delegates the creation of the ViewModel to the Android framework so that the viewModel persists
-    even after the activity is destroyed.
-    */
     private val viewModel: SensorViewModel by viewModels { SensorViewModelFactory(application) }
 
-    // Handles the result of the runtime permission request dialog.
     private val requestMultiplePermissions: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            // Check if any of the permissions were denied
-            val fineLocationDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                false
-            } else {
-                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == false
-            }
-            // BLUETOOTH_CONNECT and BLUETOOTH_SCAN permissions did not exist before Android S
-            val bluetoothConnectDenied = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                permissions[Manifest.permission.BLUETOOTH_CONNECT] == false
-            } else {
-                false
-            }
-            val bluetoothScanDenied = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                permissions[Manifest.permission.BLUETOOTH_SCAN] == false
-            } else {
-                false
-            }
+            val fineLocationDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) false else permissions[Manifest.permission.ACCESS_FINE_LOCATION] == false
+            val bluetoothConnectDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_CONNECT] == false else false
+            val bluetoothScanDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_SCAN] == false else false
 
-            // If a necessary permission was denied, inform the user
             if (fineLocationDenied || bluetoothConnectDenied || bluetoothScanDenied) {
-                // Show a dialog to explain why the permission is needed
-                Toast.makeText(
-                    this,
-                    "Bluetooth and location permissions are required to scan for sensors. Please try again and accept the permissions for this app to function.",
-                    Toast.LENGTH_LONG
-                ).show()
-                // Update the app state to reflect the permission decision
+                Toast.makeText(this, "Bluetooth and location permissions are required.", Toast.LENGTH_LONG).show()
                 viewModel.onPermissionsDenied()
             }
         }
 
-    // Relaunches the permission request dialog in case the user has denied the necessary permissions
     fun reRequestPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-            )
+        // Create a mutable list to hold permissions
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        requestMultiplePermissions.launch(permissions)
+
+        // Add notification permission for Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        requestMultiplePermissions.launch(permissionsToRequest.toTypedArray())
     }
 
-    // Opens the application's details screen in the system settings to allow the user to manually
-    // enable the necessary permissions
     fun openAppSettings() {
-        val intent = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", packageName, null)
-        )
-        startActivity(intent)
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
     }
 
-    /**
-     * The entry point for the activity. This function sets up the UI, requests necessary
-     * Bluetooth permissions, and initializes the ViewModel.
-     * @param savedInstanceState If the activity is being re-initialized after previously being shut
-     * down then this Bundle contains the data it most recently supplied in
-     * onSaveInstanceState(Bundle).
-     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Keep screen on for convenience - can remove this after development
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Request permissions based on Android version
+        // Request permissions at the start
+        val initialPermissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requestMultiplePermissions.launch(arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ))
+            initialPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            initialPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            requestMultiplePermissions.launch(arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ))
+            initialPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            initialPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        requestMultiplePermissions.launch(initialPermissions.toTypedArray())
 
-        // Sets up the UI
         setContent {
             UMCO2MonitorTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = colorResource(id = R.color.michigan_blue)
                 ) { innerPadding ->
-                    MainScreen(
-                        viewModel = viewModel,
-                        activity = this@MainActivity,
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                    MainScreen(viewModel, this, Modifier.padding(innerPadding))
                 }
             }
         }
     }
 }
 
-/**
- * The main container Composable that acts as a router for the app's UI.
- * It observes the [BleConnectionState] and displays the appropriate screen
- * (e.g., [DisconnectedScreen], [ScanningScreen], etc.) based on the current state.
- *
- * @param viewModel The app's central ViewModel, providing state and event handlers.
- * @param activity The activity that the UI is displayed in.
- * @param modifier The modifier to be applied to the layout.
- */
 @Composable
 fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Modifier = Modifier) {
     val bleConnectionState by viewModel.bleConnectionState.collectAsState()
-    val co2Value by viewModel.co2Value.collectAsState()
-    val temperatureValue by viewModel.temperatureValue.collectAsState()
-    val humidityValue by viewModel.humidityValue.collectAsState()
+
+    LaunchedEffect(bleConnectionState) {
+        if (bleConnectionState is BleConnectionState.Connected) {
+            Intent(activity, MeasurementService::class.java).also { intent ->
+                activity.startService(intent)
+            }
+        } else {
+            Intent(activity, MeasurementService::class.java).also { intent ->
+                activity.stopService(intent)
+            }
+        }
+    }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (val state = bleConnectionState) {
@@ -167,20 +130,12 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
                 onStopScanClicked = { viewModel.stopScan() }
             )
             is BleConnectionState.Connecting -> ConnectingScreen(deviceName = state.deviceName)
-            is BleConnectionState.Connected -> ConnectedScreen(
-                co2Value = co2Value,
-                temperatureValue = temperatureValue,
-                humidityValue = humidityValue,
-                onDisconnectClicked = { viewModel.disconnect() }
-            )
+            is BleConnectionState.Connected -> ConnectedScreen(viewModel)
             is BleConnectionState.Error -> {
                 val isPermissionError = state.message.contains("permission", ignoreCase = true)
                 ErrorScreen(
                     message = state.message,
-                    onRerequestClicked = {
-                        if (isPermissionError) activity.reRequestPermissions()
-                        else viewModel.startScan()
-                    },
+                    onRerequestClicked = { if (isPermissionError) activity.reRequestPermissions() else viewModel.startScan() },
                     onSettingsClicked = if (isPermissionError) { { activity.openAppSettings() } } else null,
                     firstButtonText = if (isPermissionError) "Rerequest Permissions" else "Restart Scan"
                 )
@@ -189,86 +144,197 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
     }
 }
 
-/**
- * This screen is displayed when the app is not connected to a BLE device.
- * @param onScanClicked The action to perform when the "Scan for Devices" button is clicked.
- */
 @Composable
-fun DisconnectedScreen(onScanClicked: () -> Unit) {
+fun ConnectedScreen(viewModel: SensorViewModel) {
+    val selectedTab by viewModel.selectedTab.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        SecondaryTabRow (selectedTabIndex = selectedTab) {
+            Tab(selected = selectedTab == 0, onClick = { viewModel.setSelectedTab(0) }, text = { Text("Live") })
+            Tab(selected = selectedTab == 1, onClick = { viewModel.setSelectedTab(1) }, text = { Text("History") })
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            if (selectedTab == 0) LiveView(viewModel) else HistoryView(viewModel)
+        }
+    }
+}
+
+@Composable
+fun LiveView(viewModel: SensorViewModel) {
+    val co2Value by viewModel.co2Value.collectAsState()
+    val temperatureValue by viewModel.temperatureValue.collectAsState()
+    val humidityValue by viewModel.humidityValue.collectAsState()
+
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Ready to scan for your sensor.")
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onScanClicked) {
-            Text("Scan for Devices")
-        }
+        Text("Current Readings", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        ReadingCard(label = "CO2", value = co2Value?.toString() ?: "--", unit = "ppm", color = colorResource(id = R.color.michigan_maize))
+        ReadingCard(label = "Temperature", value = temperatureValue?.let { "%.1f".format(it) } ?: "--", unit = "°F", color = Color.Red)
+        ReadingCard(label = "Humidity", value = humidityValue?.let { "%.1f".format(it) } ?: "--", unit = "%", color = Color.Cyan)
+
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = { viewModel.disconnect() }) { Text("Disconnect") }
     }
 }
 
-/**
- * This screen is displayed when the app is scanning for BLE devices.
- * @param devices The list of discovered devices.
- * @param onDeviceClicked The action to perform when a device is clicked.
- * @param onStopScanClicked The action to perform when the "Stop Scan" button is clicked.
- */
 @Composable
-fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit, onStopScanClicked: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // Show "Scanning..." at the top of the screen
-        Text("Scanning...",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.align(Alignment.CenterHorizontally))
-        Spacer(modifier = Modifier.height(16.dp))
-        // Either show the list of devices or a message if no devices have been found yet
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (devices.isEmpty()) {
-                Text("No devices found yet...", modifier = Modifier.align(Alignment.Center))
-            } else {
-                LazyColumn {
-                    items(devices) { device ->
-                        DeviceListItem(device = device, onClick = { onDeviceClicked(device) })
-                    }
-                }
+fun ReadingCard(label: String, value: String, unit: String, color: Color) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Column {
+                Text(text = label, style = MaterialTheme.typography.labelLarge, color = color)
+                Text(text = "$value $unit", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+@Composable
+fun HistoryView(viewModel: SensorViewModel) {
+    val history by viewModel.history.collectAsState()
+    val settings by viewModel.historySettings.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Sensor History", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.DarkGray).padding(8.dp)) {
+            SensorPlot(data = history, settings = settings)
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Allow the user to stop scanning
-        Button(
-            onClick = onStopScanClicked,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
-            )
-        ) {
-            Text("Stop Scan")
+        Text("Visible Sensors", style = MaterialTheme.typography.labelLarge)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            FilterChip(selected = settings.showCo2, onClick = { viewModel.updateHistorySettings(showCo2 = !settings.showCo2) }, label = { Text("CO2") })
+            FilterChip(selected = settings.showTemperature, onClick = { viewModel.updateHistorySettings(showTemperature = !settings.showTemperature) }, label = { Text("Temp") })
+            FilterChip(selected = settings.showHumidity, onClick = { viewModel.updateHistorySettings(showHumidity = !settings.showHumidity) }, label = { Text("Humid") })
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Time Range: ${settings.timeRangeHours} hours", style = MaterialTheme.typography.labelLarge)
+        Slider(value = settings.timeRangeHours.toFloat(), onValueChange = { viewModel.updateHistorySettings(timeRangeHours = it.toInt()) }, valueRange = 1f..24f, steps = 23)
+    }
+}
+
+@Composable
+fun SensorPlot(data: List<SensorData>, settings: HistorySettings) {
+    val maize = colorResource(id = R.color.michigan_maize)
+    
+    // Calculate real-time window bounds
+    val now = Clock.System.now()
+    val maxTime = now.toEpochMilliseconds()
+    val minTime = (now - settings.timeRangeHours.hours).toEpochMilliseconds()
+    val timeRangeWidth = (maxTime - minTime).toFloat()
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        if (data.isEmpty()) return@Canvas
+
+        fun getX(timestamp: Long) = (timestamp - minTime) / timeRangeWidth * size.width
+
+        // Gap threshold logic:
+        // Expected interval if 300 points are spread across the time window.
+        val expectedInterval = timeRangeWidth / 300f
+        // Threshold: 3x the expected interval, or at least 20 seconds.
+        val maxGapMs = maxOf(20000f, expectedInterval * 3f).toLong()
+
+        // Independent dynamic scaling for each sensor with buffer
+        if (settings.showCo2) {
+            val values = data.map { it.co2Value.toFloat() }
+            val min = values.minOrNull() ?: 400f
+            val max = values.maxOrNull() ?: 2000f
+            val spread = (max - min).coerceAtLeast(100f)
+            drawSeries(data, { it.co2Value.toFloat() }, min - (spread * 0.1f), max + (spread * 0.1f), maize, ::getX, maxGapMs)
+        }
+        
+        if (settings.showTemperature) {
+            val values = data.map { it.temperatureValue }
+            val min = values.minOrNull() ?: 60f
+            val max = values.maxOrNull() ?: 100f
+            val spread = (max - min).coerceAtLeast(5f)
+            drawSeries(data, { it.temperatureValue }, min - (spread * 0.1f), max + (spread * 0.1f), Color.Red, ::getX, maxGapMs)
+        }
+
+        if (settings.showHumidity) {
+            val values = data.map { it.humidityValue }
+            val min = values.minOrNull() ?: 0f
+            val max = values.maxOrNull() ?: 100f
+            val spread = (max - min).coerceAtLeast(5f)
+            drawSeries(data, { it.humidityValue }, min - (spread * 0.1f), max + (spread * 0.1f), Color.Cyan, ::getX, maxGapMs)
         }
     }
 }
 
-/**
- * This is a list item that represents a discovered device.
- * @param device The discovered device.
- * @param onClick The action to perform when the device is clicked.
- */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeries(
+    data: List<SensorData>, 
+    valueSelector: (SensorData) -> Float, 
+    minVal: Float, 
+    maxVal: Float, 
+    color: Color, 
+    getX: (Long) -> Float,
+    maxGapMs: Long
+) {
+    val path = Path()
+    var lastTimestamp: Long? = null
+
+    data.forEachIndexed { index, sensorData ->
+        val currentTimestamp = sensorData.timestamp.toEpochMilliseconds()
+        val x = getX(currentTimestamp)
+        
+        // Skip points that are off-screen to the left (older than the window)
+        if (x < 0) return@forEachIndexed
+
+        val rawY = valueSelector(sensorData)
+        val normalizedY = if (maxVal == minVal) 0.5f else (rawY - minVal) / (maxVal - minVal)
+        val y = size.height - (normalizedY.coerceIn(0f, 1f) * size.height)
+
+        if (index == 0) {
+            path.moveTo(x, y)
+        } else {
+            val gap = currentTimestamp - (lastTimestamp ?: currentTimestamp)
+            if (gap > maxGapMs) {
+                path.moveTo(x, y) // Discontinuity: skip drawing a line
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+        lastTimestamp = currentTimestamp
+    }
+    drawPath(path = path, color = color, style = Stroke(width = 2.dp.toPx()))
+}
+
+@Composable
+fun DisconnectedScreen(onScanClicked: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text("Ready to scan for your sensor.")
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onScanClicked) { Text("Scan for Devices") }
+    }
+}
+
+@Composable
+fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit, onStopScanClicked: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Scanning...", style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Spacer(modifier = Modifier.height(16.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (devices.isEmpty()) Text("No devices found yet...", modifier = Modifier.align(Alignment.Center))
+            else LazyColumn { items(devices) { DeviceListItem(it) { onDeviceClicked(it) } } }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onStopScanClicked, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) { Text("Stop Scan") }
+    }
+}
+
 @Composable
 fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = device.name ?: "Unknown Device", fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
@@ -277,132 +343,23 @@ fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
     }
 }
 
-/**
- * This screen is displayed when the app is connected to a BLE device.
- * @param co2Value The current CO2 value.
- * @param temperatureValue The current temperature value.
- * @param humidityValue The current humidity value.
- * @param onDisconnectClicked The action to perform when the "Disconnect" button is clicked.
- */
-@Composable
-fun ConnectedScreen(    co2Value: UShort?,
-                        temperatureValue: Float?,
-                        humidityValue: Float?,
-                        onDisconnectClicked: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // --- CO2 SECTION (Hero/Emphasis) ---
-        Text("CO2 CONCENTRATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-        Text(
-            text = co2Value?.toString() ?: "--",
-            style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text("ppm", style = MaterialTheme.typography.titleMedium)
-
-        Spacer(modifier = Modifier.height(48.dp))
-
-        // --- SECONDARY DATA SECTION (Smaller, side-by-side) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            // Temperature
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("TEMPERATURE", style = MaterialTheme.typography.labelSmall)
-                Text(
-                    text = temperatureValue?.let { "%.1f".format(it) } ?: "--",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text("°F", style = MaterialTheme.typography.bodySmall)
-            }
-
-            // Humidity
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("HUMIDITY", style = MaterialTheme.typography.labelSmall)
-                Text(
-                    text = humidityValue?.let { "%.1f".format(it) } ?: "--",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text("%", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(64.dp))
-
-        Button(onClick = onDisconnectClicked) {
-            Text("Disconnect")
-        }
-    }
-}
-
-/**
- * This screen is displayed when the app is connecting to a BLE device.
- * @param deviceName The name of the device being connected to.
- */
 @Composable
 fun ConnectingScreen(deviceName: String?) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         CircularProgressIndicator()
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Connecting to ${deviceName ?: "Device"}...",
-            style = MaterialTheme.typography.titleMedium
-        )
-        Text(
-            text = "This should take 5-10 seconds...",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline
-        )
+        Text("Connecting to ${deviceName ?: "Device"}...", style = MaterialTheme.typography.titleMedium)
     }
 }
 
-// TODO Make sure the appropriate permissions are set before allowing the transition to the scanning screen
-/**
- * This screen is displayed when an error occurs.
- * @param message The error message to display.
- * @param onRerequestClicked The action to perform when the "Rerequest Permissions" button is clicked.
- * @param onSettingsClicked The action to perform when the "Go to Settings" button is clicked.
- * @param firstButtonText The text to display on the first button. Defaults to "Rerequest Permissions", but for other errors it can be something else.
- */
 @Composable
-fun ErrorScreen(
-    message: String,
-    onRerequestClicked: (() -> Unit)? = null,
-    onSettingsClicked: (() -> Unit)? = null,
-    firstButtonText: String = "Rerequest Permissions") {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+fun ErrorScreen(message: String, onRerequestClicked: () -> Unit, onSettingsClicked: (() -> Unit)?, firstButtonText: String) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text("An Error Occurred", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.error)
         Spacer(modifier = Modifier.height(8.dp))
         Text(message, modifier = Modifier.padding(horizontal = 16.dp), textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(16.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            onRerequestClicked?.let { onClick ->
-                Button(onClick = onClick) {
-                    Text(firstButtonText)
-                }
-            }
-            onSettingsClicked?.let { onClick ->
-                Button(onClick = onClick) {
-                    Text("Go to Settings")
-                }
-            }
-        }
+        Button(onClick = onRerequestClicked) { Text(firstButtonText) }
+        onSettingsClicked?.let { Spacer(modifier = Modifier.height(8.dp)); Button(onClick = it) { Text("Go to Settings") } }
     }
 }

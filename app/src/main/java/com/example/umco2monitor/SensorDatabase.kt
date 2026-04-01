@@ -1,5 +1,6 @@
 package com.example.umco2monitor
 
+import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Clock
@@ -11,6 +12,10 @@ class Converters {
     fun fromTimestamp(value: Long?): Instant? = value?.let { Instant.fromEpochMilliseconds(it) }
     @TypeConverter
     fun dateToTimestamp(date: Instant?): Long? = date?.toEpochMilliseconds()
+    @TypeConverter
+    fun fromUShort(value: UShort?): Int? = value?.toInt()
+    @TypeConverter
+    fun toUShort(value: Int?): UShort? = value?.toUShort()
 }
 
 // The entity for the Room database
@@ -23,26 +28,21 @@ data class SensorDataEntity(
     val timestamp: Instant = Clock.System.now()
 )
 
-// The DAO for the Room database, where DAO stands for "Data Access Object"
+// The DAO for the Room database
 @Dao
 interface SensorDataDao {
-    // Insert a new reading into the database
     @Insert
     suspend fun insert(sensorData: SensorDataEntity)
 
-    // Get all readings from the database
     @Query("SELECT * FROM sensor_data ORDER BY timestamp DESC")
     fun getAllReadings(): Flow<List<SensorDataEntity>>
 
-    // Get all readings from the database within a specific time range
     @Query("SELECT * FROM sensor_data WHERE timestamp BETWEEN :start AND :end")
     fun getReadingsInRange(start: Instant, end: Instant): Flow<List<SensorDataEntity>>
 
-    // Delete all readings from the database
     @Query("DELETE FROM sensor_data")
     suspend fun deleteAll()
 
-    // Delete all readings from the database within a specific time range
     @Query("DELETE FROM sensor_data WHERE timestamp BETWEEN :start AND :end")
     fun deleteReadingsInRange(start: Instant, end: Instant)
 }
@@ -52,4 +52,21 @@ interface SensorDataDao {
 @TypeConverters(Converters::class)
 abstract class SensorDatabase : RoomDatabase() {
     abstract fun sensorDataDao(): SensorDataDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SensorDatabase? = null
+
+        fun getInstance(context: Context): SensorDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    SensorDatabase::class.java,
+                    "sensor_database"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
 }
