@@ -6,6 +6,7 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.result.launch
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -13,7 +14,9 @@ import androidx.lifecycle.viewModelScope
 import com.welie.blessed.BluetoothPeripheral
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
@@ -59,7 +62,6 @@ data class HistorySettings(
 
 /**
  * The central ViewModel for the application.
- * Now refactored to be "read-only" regarding history, observing the database through [SensorRepository].
  */
 class SensorViewModel(private val application: Application) : ViewModel() {
     
@@ -80,22 +82,28 @@ class SensorViewModel(private val application: Application) : ViewModel() {
     private val _historySettings = MutableStateFlow(HistorySettings())
     val historySettings: StateFlow<HistorySettings> = _historySettings.asStateFlow()
 
+    private val _resetPlotSignal = MutableSharedFlow<Unit>(replay = 0)
+    val resetPlotSignal = _resetPlotSignal.asSharedFlow()
+
     /**
      * Sampled history of sensor data for the plot.
-     * Now observes the [SensorRepository.allReadings] flow.
+     * We provide enough data to allow for zooming out in the UI.
      */
     val history: StateFlow<List<SensorData>> = combine(
         repository.allReadings,
         _historySettings
-    ) { entities, settings ->
-        val cutoff = kotlin.time.Clock.System.now() - settings.timeRange
+    ) { entities, _ ->
+        // Always provide a generous window (e.g., 8 days) so panning/zooming
+        // out from 1H or 6H doesn't hit a "wall" of empty data.
+        val cutoff = kotlin.time.Clock.System.now() - 8.days
         val filtered = entities.filter { it.timestamp >= cutoff }
-        
-        // Sampling logic: limit to ~300 points for the plot to keep it responsive
-        val maxPoints = 300
-        val step = (filtered.size / maxPoints).coerceAtLeast(1)
-        
-        filtered.filterIndexed { index, _ -> index % step == 0 }
+
+//        // Sampling: keep it responsive (max 1000 points)
+//        val maxPoints = 1000
+//        val step = (filtered.size / maxPoints).coerceAtLeast(1)
+
+        filtered
+//            .filterIndexed { index, _ -> index % step == 0 }
             .map { SensorData(it.co2Reading, it.temperatureReading, it.humidityReading, it.timestamp) }
             .reversed()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -125,6 +133,10 @@ class SensorViewModel(private val application: Application) : ViewModel() {
                 showHumidity = showHumidity ?: current.showHumidity,
                 timeRange = timeRange ?: current.timeRange
             )
+        }
+        // If timeRange was changed, trigger a reset signal
+        if (timeRange != null) {
+            viewModelScope.launch { _resetPlotSignal.emit(Unit) }
         }
     }
 
