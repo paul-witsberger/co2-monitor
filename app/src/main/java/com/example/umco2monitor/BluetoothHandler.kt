@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -44,66 +45,56 @@ import java.util.UUID
 @SuppressLint("StaticFieldLeak")
 object BluetoothHandler {
 
-    // --- BLE Core Components ---
-    // Create the BluetoothCentralManager object
     internal lateinit var centralManager: BluetoothCentralManager
-    private var isInitialized = false
+    private var isInitialized: Boolean = false
 
-    // Create a dedicated thread for BLE operations
     internal lateinit var handlerThread: HandlerThread
     internal lateinit var bleHandler: Handler
 
-    // Set the scope for launching coroutines
     internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
-    private var scope = CoroutineScope(dispatcher + SupervisorJob())
+    private var scope: CoroutineScope = CoroutineScope(dispatcher + SupervisorJob())
 
-    // --- Public StateFlows ---
-    private val _bleConnectionState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
+    private val _bleConnectionState: MutableStateFlow<BleConnectionState> = MutableStateFlow(BleConnectionState.Disconnected)
     /**
      * Public state flow for BLE connection state.
      */
-    val bleConnectionState = _bleConnectionState.asStateFlow()
+    val bleConnectionState: StateFlow<BleConnectionState> = _bleConnectionState.asStateFlow()
 
-    private val _co2Value = MutableStateFlow<UShort?>(null)
+    private val _co2Value: MutableStateFlow<UShort?> = MutableStateFlow(null)
     /**
      * Public state flow for CO2 value.
      */
-    val co2Value = _co2Value.asStateFlow()
+    val co2Value: StateFlow<UShort?> = _co2Value.asStateFlow()
 
-    private val _temperatureValue = MutableStateFlow<Float?>(null)
+    private val _temperatureValue: MutableStateFlow<Float?> = MutableStateFlow(null)
     /**
      * Public state flow for temperature value.
      */
-    val temperatureValue = _temperatureValue.asStateFlow()
+    val temperatureValue: StateFlow<Float?> = _temperatureValue.asStateFlow()
 
-    private val _humidityValue = MutableStateFlow<Float?>(null)
+    private val _humidityValue: MutableStateFlow<Float?> = MutableStateFlow(null)
     /**
      * Public state flow for humidity value.
      */
-    val humidityValue = _humidityValue.asStateFlow()
+    val humidityValue: StateFlow<Float?> = _humidityValue.asStateFlow()
 
-    private val _batteryLevel = MutableStateFlow<UInt?>(null)
+    private val _batteryLevel: MutableStateFlow<UInt?> = MutableStateFlow(null)
     /**
      * Public state flow for battery level.
      */
-    val batteryLevel = _batteryLevel.asStateFlow()
+    val batteryLevel: StateFlow<UInt?> = _batteryLevel.asStateFlow()
 
-    // --- UUID Definitions ---
-    // UUIDs for the CO2 sensor
     private val SENSOR_SERVICE_UUID: UUID = UUID.fromString("3e6cebcd-d4f8-46e2-9513-056d94a6377c")
     private val CO2_CHARACTERISTIC_UUID: UUID = UUID.fromString("b70c91c7-40b6-461f-aeff-4b15a16fd0e7")
 
-    // UUIDs for the standardized Environmental Sensing Service (ESS) with temperature and humidity characteristics
     private val ESS_SERVICE_UUID: UUID = from16BitString("181A")
     private val TEMPERATURE_CHARACTERISTIC_UUID: UUID = from16BitString("2A6E")
     private val HUMIDITY_CHARACTERISTIC_UUID: UUID = from16BitString("2A6F")
 
-    // UUIDs for the Device Information service (DIS)
     private val DIS_SERVICE_UUID: UUID = from16BitString("180A")
     private val MANUFACTURER_NAME_CHARACTERISTIC_UUID: UUID = from16BitString("2A29")
     private val MODEL_NUMBER_CHARACTERISTIC_UUID: UUID = from16BitString("2A24")
 
-    // UUIDs for the Battery Service (BAS)
     private val BTS_SERVICE_UUID: UUID = from16BitString("180F")
     private val BATTERY_LEVEL_CHARACTERISTIC_UUID: UUID = from16BitString("2A19")
 
@@ -118,7 +109,6 @@ object BluetoothHandler {
         _batteryLevel.value = null
         _bleConnectionState.value = BleConnectionState.Disconnected
 
-        // Use the test dispatcher if provided, otherwise use the default dispatcher
         testDispatcher?.let {
             this.dispatcher = it
             this.scope = CoroutineScope(it + SupervisorJob())
@@ -142,64 +132,44 @@ object BluetoothHandler {
         }
         if (::handlerThread.isInitialized && handlerThread.isAlive) {
             handlerThread.quitSafely()
-            handlerThread.join() // Block until the thread is fully dead
+            handlerThread.join()
         }
         isInitialized = false
     }
 
-    /**
-     * Handles all events related to a specific, connected peripheral.
-     */
-    internal val peripheralCallback = object : BluetoothPeripheralCallback() {
-        /**
-         * Triggered when a peripheral's services are discovered.
-         * @param peripheral The peripheral that was discovered.
-         */
+    internal val peripheralCallback: BluetoothPeripheralCallback = object : BluetoothPeripheralCallback() {
         override fun onServicesDiscovered(peripheral: BluetoothPeripheral) {
             Timber.i("Services discovered for ${peripheral.name}")
 
-            // Read DIS characteristics
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MANUFACTURER_NAME_CHARACTERISTIC_UUID)
             peripheral.readCharacteristic(DIS_SERVICE_UUID, MODEL_NUMBER_CHARACTERISTIC_UUID)
 
-            // Read the initial battery level and enable notifications
-            peripheral.getCharacteristic(BTS_SERVICE_UUID, BATTERY_LEVEL_CHARACTERISTIC_UUID)?.let {
+            peripheral.getCharacteristic(BTS_SERVICE_UUID, BATTERY_LEVEL_CHARACTERISTIC_UUID)?.let { characteristic: BluetoothGattCharacteristic ->
                 Timber.i("Enabling notifications for battery level characteristic")
-                peripheral.readCharacteristic(it)
-                peripheral.startNotify(it) // Many devices notify on battery level change
+                peripheral.readCharacteristic(characteristic)
+                peripheral.startNotify(characteristic)
             }
 
-            // Enable notifications for the CO2 characteristic
-            peripheral.getCharacteristic(SENSOR_SERVICE_UUID, CO2_CHARACTERISTIC_UUID)?.let {
+            peripheral.getCharacteristic(SENSOR_SERVICE_UUID, CO2_CHARACTERISTIC_UUID)?.let { characteristic: BluetoothGattCharacteristic ->
                 Timber.i("Enabling notifications for CO2 characteristic")
-                peripheral.startNotify(it)
+                peripheral.startNotify(characteristic)
             }
 
-            // Enable notifications for the ESS service, including temperature and humidity
             peripheral.getService(ESS_SERVICE_UUID)?.let { service ->
                 Timber.i("Found Environmental Sensing Service")
-                // Temperature
-                service.getCharacteristic(TEMPERATURE_CHARACTERISTIC_UUID)?.let {
+                service.getCharacteristic(TEMPERATURE_CHARACTERISTIC_UUID)?.let { characteristic: BluetoothGattCharacteristic ->
                     Timber.i("Enabling notifications for temperature characteristic")
-                    peripheral.startNotify(it)
+                    peripheral.startNotify(characteristic)
                 }
-                // Humidity
-                service.getCharacteristic(HUMIDITY_CHARACTERISTIC_UUID)?.let {
+                service.getCharacteristic(HUMIDITY_CHARACTERISTIC_UUID)?.let { characteristic: BluetoothGattCharacteristic ->
                     Timber.i("Enabling notifications for humidity characteristic")
-                    peripheral.startNotify(it)
+                    peripheral.startNotify(characteristic)
                 }
             }
 
-            // Set connection priority to balanced after all services and characteristics have been discovered
             peripheral.requestConnectionPriority(ConnectionPriority.BALANCED)
         }
 
-        /**
-         * Triggered when notifications are turned on or off for a characteristic.
-         * @param peripheral The peripheral that owns the relevant characteristic.
-         * @param characteristic The characteristic that has had its notification state change.
-         * @param status The status of the notification state change.
-         */
         override fun onNotificationStateUpdate(peripheral: BluetoothPeripheral, characteristic: BluetoothGattCharacteristic, status: GattStatus) {
             if (status == GattStatus.SUCCESS) {
                 val characteristicName: String = when (characteristic.uuid) {
@@ -219,19 +189,10 @@ object BluetoothHandler {
             }
         }
 
-        /**
-         * Triggered when the value of a characteristic is updated. Parses the raw data into a
-         * usable data type and updates the corresponding StateFlow.
-         * @param peripheral The peripheral that owns the relevant characteristic.
-         * @param value The new value of the characteristic.
-         * @param characteristic The characteristic that has had its value updated.
-         * @param status The status of the value update.
-         */
         override fun onCharacteristicUpdate(peripheral: BluetoothPeripheral, value: ByteArray, characteristic: BluetoothGattCharacteristic, status: GattStatus) {
             if (status != GattStatus.SUCCESS) return
 
-            // Create a parser object to convert the incoming data from bytes to their intended data types
-            val parser = BluetoothBytesParser(value, offset = 0, byteOrder = ByteOrder.LITTLE_ENDIAN)
+            val parser: BluetoothBytesParser = BluetoothBytesParser(value, offset = 0, byteOrder = ByteOrder.LITTLE_ENDIAN)
 
             when (characteristic.uuid) {
                 CO2_CHARACTERISTIC_UUID -> {
@@ -256,7 +217,6 @@ object BluetoothHandler {
                 }
 
                 BATTERY_LEVEL_CHARACTERISTIC_UUID -> {
-                    // Check if there are enough bytes for an 8-bit unsigned integer (1)
                     if (value.isNotEmpty()) {
                         val batteryLevel: UInt = parser.getUInt8()
                         Timber.i("Received Battery Level: $batteryLevel%")
@@ -267,46 +227,28 @@ object BluetoothHandler {
         }
     }
 
-    /**
-     * Handles all events related to the central manager. This includes scanning, connecting, and
-     * disconnecting from peripherals.
-     */
-    internal val centralManagerCallback = object : BluetoothCentralManagerCallback() {
-        /**
-         * Triggered when a peripheral is discovered. Adds the discovered peripheral to the list of
-         * discovered devices if necessary.
-         * @param peripheral The peripheral object representing the device that was found.
-         * @param scanResult The raw scan result data, containing RSSI and advertising information.
-         */
+    internal val centralManagerCallback: BluetoothCentralManagerCallback = object : BluetoothCentralManagerCallback() {
         override fun onDiscovered(peripheral: BluetoothPeripheral, scanResult: ScanResult) {
             if (peripheral.name.isBlank()) return
 
             Timber.i("Discovered '${peripheral.name}' with address '${peripheral.address}'")
-            val currentDevices = (_bleConnectionState.value as? BleConnectionState.Scanning)?.discoveredDevices ?: emptyList()
+            val currentState: BleConnectionState = _bleConnectionState.value
+            val currentDevices: List<DiscoveredDevice> = if (currentState is BleConnectionState.Scanning) currentState.discoveredDevices else emptyList()
+            
             if (currentDevices.none { it.address == peripheral.address }) {
-                val newDevice = DiscoveredDevice(peripheral.name, peripheral.address, peripheral)
-                _bleConnectionState.update {
-                    if (it is BleConnectionState.Scanning) it.copy(discoveredDevices = it.discoveredDevices + newDevice) else it
+                val newDevice: DiscoveredDevice = DiscoveredDevice(peripheral.name, peripheral.address, peripheral)
+                _bleConnectionState.update { state: BleConnectionState ->
+                    if (state is BleConnectionState.Scanning) state.copy(discoveredDevices = state.discoveredDevices + newDevice) else state
                 }
             }
         }
 
-        /**
-         * Triggered when a peripheral is connected. Sets the connection state to connected.
-         * @param peripheral The peripheral that was connected.
-         */
         override fun onConnected(peripheral: BluetoothPeripheral) {
             peripheral.requestConnectionPriority(ConnectionPriority.HIGH)
             Timber.i("Connected to ${peripheral.name}")
             _bleConnectionState.value = BleConnectionState.Connected(peripheral)
         }
 
-        /**
-         * Triggered when a peripheral is disconnected. Sets the connection state to disconnected,
-         * and resets all sensor values.
-         * @param peripheral The peripheral that was disconnected.
-         * @param status The HCI status of the (dis)connection.
-         */
         override fun onDisconnected(peripheral: BluetoothPeripheral, status: HciStatus) {
             Timber.i("Disconnected from ${peripheral.name}. Reason: $status")
             if (status != HciStatus.SUCCESS) {
@@ -315,7 +257,6 @@ object BluetoothHandler {
                 _bleConnectionState.value = BleConnectionState.Disconnected
             }
 
-            // Reset all sensor values on disconnect
             scope.launch {
                 _co2Value.emit(null)
                 _temperatureValue.emit(null)
@@ -324,30 +265,16 @@ object BluetoothHandler {
             }
         }
 
-        /**
-         * Triggered when a connection attempt fails. Sets the connection state to error.
-         * @param peripheral The peripheral that was being connected.
-         * @param status The HCI status of the connection attempt.
-         */
         override fun onConnectionFailed(peripheral: BluetoothPeripheral, status: HciStatus) {
             Timber.e("Connection to ${peripheral.name} failed with status $status")
             _bleConnectionState.value = BleConnectionState.Error("Connection failed with status: $status \n(Error code: ${status.value})")
         }
 
-        /**
-         * Triggered when a scan fails. Sets the connection state to error.
-         * @param scanFailure The ScanFailure that occurred.
-         */
         override fun onScanFailed(scanFailure: ScanFailure) {
             Timber.e("Scan failed with error $scanFailure")
             _bleConnectionState.value = BleConnectionState.Error("Scan failed")
         }
 
-        /**
-         * Triggered when the Bluetooth adapter state changes. Sets the connection state to error
-         * if the adapter is turned off.
-         * @param state The new Bluetooth adapter state.
-         */
         override fun onBluetoothAdapterStateChanged(state: Int) {
             if (state == BluetoothAdapter.STATE_OFF) {
                 Timber.e("Bluetooth adapter turned off")
@@ -356,7 +283,6 @@ object BluetoothHandler {
         }
     }
 
-    // Public functions to be called from the ViewModel
     /**
      * Initializes the Bluetooth handler, creates a thread for BLE operations, and initializes the
      * central manager.
@@ -366,12 +292,10 @@ object BluetoothHandler {
         if (isInitialized) return
         Timber.plant(Timber.DebugTree())
 
-        // Start the dedicated BLE thread and create its handler
         handlerThread = HandlerThread("BlessedBleThread", Process.THREAD_PRIORITY_DEFAULT)
         handlerThread.start()
         bleHandler = Handler(handlerThread.looper)
 
-        // Initialize the central manager
         this.centralManager = BluetoothCentralManager(context.applicationContext, centralManagerCallback, bleHandler)
         isInitialized = true
     }
@@ -380,7 +304,6 @@ object BluetoothHandler {
      * Starts a scan for BLE peripherals.
      */
     fun startScan() {
-//        bleHandler.postDelayed({ stopScan() }, 30000) // Stop scan after 30 seconds
         _bleConnectionState.value = BleConnectionState.Scanning(emptyList())
         centralManager.scanForPeripheralsWithServices(setOf(SENSOR_SERVICE_UUID))
     }
@@ -415,5 +338,4 @@ object BluetoothHandler {
     fun disconnect(peripheral: BluetoothPeripheral) {
         centralManager.cancelConnection(peripheral)
     }
-
 }

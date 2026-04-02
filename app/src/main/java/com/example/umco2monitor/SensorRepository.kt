@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Repository class that abstracts the data source (Room database) from the rest of the app.
  * It provides a clean API for data access to the rest of the application.
+ *
+ * @param dao The DAO for accessing sensor data.
  */
 class SensorRepository(private val dao: SensorDataDao) {
 
@@ -17,6 +19,7 @@ class SensorRepository(private val dao: SensorDataDao) {
     /**
      * Inserts a new sensor reading into the database.
      * This is a suspend function, so it must be called from a coroutine.
+     *
      * @param reading The [SensorDataEntity] to insert.
      */
     suspend fun insert(reading: SensorDataEntity) {

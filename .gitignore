@@ -19,5 +19,6 @@ captures/
 .DS_Store
 Thumbs.db
 
-# Developer log
+# Developer log and LLM instructions
 DEV_LOG.md
+AGENTS.md

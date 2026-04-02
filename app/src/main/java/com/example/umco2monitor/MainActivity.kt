@@ -22,8 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -49,10 +47,9 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.times
+import kotlin.time.Instant
 
 /**
  * Main activity of the application. This is the entry point of the app.
@@ -61,10 +58,10 @@ class MainActivity : ComponentActivity() {
     private val viewModel: SensorViewModel by viewModels { SensorViewModelFactory(application) }
 
     private val requestMultiplePermissions: ActivityResultLauncher<Array<String>> =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            val fineLocationDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) false else permissions[Manifest.permission.ACCESS_FINE_LOCATION] == false
-            val bluetoothConnectDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_CONNECT] == false else false
-            val bluetoothScanDenied = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_SCAN] == false else false
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions: Map<String, Boolean> ->
+            val fineLocationDenied: Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) false else permissions[Manifest.permission.ACCESS_FINE_LOCATION] == false
+            val bluetoothConnectDenied: Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_CONNECT] == false else false
+            val bluetoothScanDenied: Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissions[Manifest.permission.BLUETOOTH_SCAN] == false else false
 
             if (fineLocationDenied || bluetoothConnectDenied || bluetoothScanDenied) {
                 Toast.makeText(this, "Bluetooth and location permissions are required.", Toast.LENGTH_LONG).show()
@@ -72,8 +69,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * Re-requests required permissions if they were denied.
+     */
     fun reRequestPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
+        val permissionsToRequest: MutableList<String> = mutableListOf()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
@@ -86,6 +86,9 @@ class MainActivity : ComponentActivity() {
         requestMultiplePermissions.launch(permissionsToRequest.toTypedArray())
     }
 
+    /**
+     * Opens the application settings to allow the user to manually grant permissions.
+     */
     fun openAppSettings() {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
     }
@@ -94,8 +97,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Request permissions at the start
-        val initialPermissions = mutableListOf<String>()
+        val initialPermissions: MutableList<String> = mutableListOf()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             initialPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
             initialPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
@@ -112,7 +114,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = colorResource(id = R.color.michigan_blue)
-                ) { innerPadding ->
+                ) { innerPadding: PaddingValues ->
                     MainScreen(viewModel, this, Modifier.padding(innerPadding))
                 }
             }
@@ -120,34 +122,39 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Main Compose screen displaying either disconnected, scanning, connecting, connected, or error states.
+ *
+ * @param viewModel The view model.
+ * @param activity The main activity context.
+ * @param modifier The modifier to be applied to the layout.
+ */
 @Composable
 fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Modifier = Modifier) {
-    val bleConnectionState by viewModel.bleConnectionState.collectAsState()
+    val bleConnectionState: BleConnectionState by viewModel.bleConnectionState.collectAsState()
 
     LaunchedEffect(bleConnectionState) {
         if (bleConnectionState is BleConnectionState.Connected) {
-            Intent(activity, MeasurementService::class.java).also { intent ->
-                activity.startService(intent)
-            }
+            val intent: Intent = Intent(activity, MeasurementService::class.java)
+            activity.startService(intent)
         } else {
-            Intent(activity, MeasurementService::class.java).also { intent ->
-                activity.stopService(intent)
-            }
+            val intent: Intent = Intent(activity, MeasurementService::class.java)
+            activity.stopService(intent)
         }
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        when (val state = bleConnectionState) {
+        when (val state: BleConnectionState = bleConnectionState) {
             is BleConnectionState.Disconnected -> DisconnectedScreen(onScanClicked = { viewModel.startScan() })
             is BleConnectionState.Scanning -> ScanningScreen(
                 devices = state.discoveredDevices,
-                onDeviceClicked = { viewModel.connectToDevice(it) },
+                onDeviceClicked = { device: DiscoveredDevice -> viewModel.connectToDevice(device) },
                 onStopScanClicked = { viewModel.stopScan() }
             )
             is BleConnectionState.Connecting -> ConnectingScreen(deviceName = state.deviceName)
             is BleConnectionState.Connected -> ConnectedScreen(viewModel)
             is BleConnectionState.Error -> {
-                val isPermissionError = state.message.contains("permission", ignoreCase = true)
+                val isPermissionError: Boolean = state.message.contains("permission", ignoreCase = true)
                 ErrorScreen(
                     message = state.message,
                     onRerequestClicked = { if (isPermissionError) activity.reRequestPermissions() else viewModel.startScan() },
@@ -159,12 +166,17 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
     }
 }
 
+/**
+ * Screen displayed when successfully connected to a sensor device.
+ *
+ * @param viewModel The view model.
+ */
 @Composable
 fun ConnectedScreen(viewModel: SensorViewModel) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
+    val selectedTab: Int by viewModel.selectedTab.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        PrimaryTabRow (selectedTabIndex = selectedTab) {
+        PrimaryTabRow(selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { viewModel.setSelectedTab(0) }, text = { Text("Live") })
             Tab(selected = selectedTab == 1, onClick = { viewModel.setSelectedTab(1) }, text = { Text("History") })
         }
@@ -175,11 +187,16 @@ fun ConnectedScreen(viewModel: SensorViewModel) {
     }
 }
 
+/**
+ * Displays live sensor readings.
+ *
+ * @param viewModel The view model.
+ */
 @Composable
 fun LiveView(viewModel: SensorViewModel) {
-    val co2Value by viewModel.co2Value.collectAsState()
-    val temperatureValue by viewModel.temperatureValue.collectAsState()
-    val humidityValue by viewModel.humidityValue.collectAsState()
+    val co2Value: UShort? by viewModel.co2Value.collectAsState()
+    val temperatureValue: Float? by viewModel.temperatureValue.collectAsState()
+    val humidityValue: Float? by viewModel.humidityValue.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -198,6 +215,14 @@ fun LiveView(viewModel: SensorViewModel) {
     }
 }
 
+/**
+ * Card representing a single sensor reading.
+ *
+ * @param label The name of the reading.
+ * @param value The value string to display.
+ * @param unit The unit of the reading.
+ * @param color The accent color for the reading text.
+ */
 @Composable
 fun ReadingCard(label: String, value: String, unit: String, color: Color) {
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -210,12 +235,17 @@ fun ReadingCard(label: String, value: String, unit: String, color: Color) {
     }
 }
 
+/**
+ * Displays the historical data chart.
+ *
+ * @param viewModel The view model.
+ */
 @Composable
 fun HistoryView(viewModel: SensorViewModel) {
-    val history by viewModel.history.collectAsState()
-    val settings by viewModel.historySettings.collectAsState()
+    val history: List<SensorData> by viewModel.history.collectAsState()
+    val settings: HistorySettings by viewModel.historySettings.collectAsState()
 
-    val timeRanges = listOf(
+    val timeRanges: List<Pair<String, Duration>> = listOf(
         "1H" to 1.hours,
         "6H" to 6.hours,
         "24H" to 24.hours,
@@ -232,15 +262,14 @@ fun HistoryView(viewModel: SensorViewModel) {
                 .fillMaxWidth()
                 .background(Color.DarkGray.copy(alpha = 0.8f))
         ) {
-            SensorPlot(data = history, settings = settings, viewModel = viewModel)
+            SensorPlot(data = history, settings = settings)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Time Range Selection
         Text("Time Range", style = MaterialTheme.typography.labelLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            timeRanges.forEach { (label, duration) ->
+            timeRanges.forEach { (label: String, duration: Duration) ->
                 FilterChip(
                     selected = settings.timeRange == duration,
                     onClick = { viewModel.updateHistorySettings(timeRange = duration) },
@@ -251,7 +280,6 @@ fun HistoryView(viewModel: SensorViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Visible Sensors Selection
         Text("Visible Sensors", style = MaterialTheme.typography.labelLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             FilterChip(selected = settings.showCo2,
@@ -283,35 +311,37 @@ private class AxisConfig(
     var position: AxisPosition = AxisPosition.LEFT
 )
 
+/**
+ * Plots sensor history data onto a canvas.
+ *
+ * @param data A list of historical sensor data points.
+ * @param settings Current plot settings.
+ */
 @Composable
-fun SensorPlot(data: List<SensorData>, settings: HistorySettings, viewModel: SensorViewModel) {
-    val maize = colorResource(id = R.color.michigan_maize)
+fun SensorPlot(data: List<SensorData>, settings: HistorySettings) {
+    val maize: Color = colorResource(id = R.color.michigan_maize)
 
-    // Internal state for temporary zoom/pan
-    var scale by remember { mutableFloatStateOf(1f) }
-    var timeShift by remember { mutableStateOf(Duration.ZERO) }
+    var scale: Float by remember { mutableFloatStateOf(1f) }
+    var timeShift: Duration by remember { mutableStateOf(Duration.ZERO) }
 
-    // RESET LOGIC: When settings.timeRange changes (user clicks 1H, 6H, etc.),
-    // reset the plot to the most recent data.
     LaunchedEffect(settings.timeRange) {
         scale = 1f
         timeShift = Duration.ZERO
     }
 
-    // Fixed Padding: Increased to 55.dp to ensure Y-axis labels stay inside the gray area
-    val pL_dp = 55.dp
-    val pR_dp = 55.dp
-    val pT_dp = 10.dp
-    val pB_dp = 40.dp
+    val paddingLeftDp: androidx.compose.ui.unit.Dp = 55.dp
+    val paddingRightDp: androidx.compose.ui.unit.Dp = 55.dp
+    val paddingTopDp: androidx.compose.ui.unit.Dp = 10.dp
+    val paddingBottomDp: androidx.compose.ui.unit.Dp = 40.dp
 
-    val axisConfigs = listOf(
+    val axisConfigs: List<AxisConfig> = listOf(
         AxisConfig("CO2", maize, settings.showCo2, { it.co2Value.toFloat() }),
         AxisConfig("Humidity", Color.Cyan, settings.showHumidity, { it.humidityValue }),
         AxisConfig("Temperature", Color.Red, settings.showTemperature, { it.temperatureValue })
     )
 
-    var isLeftOccupied = false
-    axisConfigs.filter { it.isVisible }.forEach { config ->
+    var isLeftOccupied: Boolean = false
+    axisConfigs.filter { it.isVisible }.forEach { config: AxisConfig ->
         if (!isLeftOccupied) { config.position = AxisPosition.LEFT; isLeftOccupied = true }
         else { config.position = AxisPosition.RIGHT }
     }
@@ -319,106 +349,85 @@ fun SensorPlot(data: List<SensorData>, settings: HistorySettings, viewModel: Sen
     Canvas(modifier = Modifier
         .fillMaxSize()
         .pointerInput(settings) {
-            detectTransformGestures { centroid, pan, zoom, _ ->
-                val pL = pL_dp.toPx()
-                val pR = pR_dp.toPx()
-                val plotWidth = size.width - pL - pR
+            detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, _: Float ->
+                val paddingLeftPx: Float = paddingLeftDp.toPx()
+                val paddingRightPx: Float = paddingRightDp.toPx()
+                val plotWidth: Float = size.width - paddingLeftPx - paddingRightPx
                 if (plotWidth <= 0f) return@detectTransformGestures
 
-                // 1. Calculate the state BEFORE the gesture
-                val oldScale = scale
-                val oldVisibleDuration = settings.timeRange / oldScale.toDouble()
+                val oldScale: Float = scale
+                val oldVisibleDuration: Duration = settings.timeRange / oldScale.toDouble()
 
-                // 2. Apply the new scale from the zoom gesture
-                val newScale = (scale * zoom).coerceIn(0.1f, 20f)
+                val newScale: Float = (scale * zoom).coerceIn(0.1f, 20f)
                 scale = newScale
-                val newVisibleDuration = settings.timeRange / newScale.toDouble()
+                val newVisibleDuration: Duration = settings.timeRange / newScale.toDouble()
 
-                // 3. Calculate the pan in terms of duration.
-                // This calculates how much TIME the finger moved over.
-                val panInDuration = oldVisibleDuration * (pan.x / plotWidth).toDouble()
+                val panInDuration: Duration = oldVisibleDuration * (pan.x / plotWidth).toDouble()
 
-                // 4. Calculate the shift caused by zooming.
-                // This keeps the point under the centroid stationary.
-                val durationChangeFromZoom = oldVisibleDuration - newVisibleDuration
-                val zoomShift = durationChangeFromZoom * (1.0 - (centroid.x - pL) / plotWidth).coerceIn(0.0, 1.0)
+                val durationChangeFromZoom: Duration = oldVisibleDuration - newVisibleDuration
+                val zoomShift: Duration = durationChangeFromZoom * (1.0 - (centroid.x - paddingLeftPx) / plotWidth).coerceIn(0.0, 1.0)
 
-                // 5. Apply the total shift.
-                // Panning right (positive pan.x) pulls data from the left (past),
-                // so we must INCREASE the timeShift.
                 timeShift += panInDuration + zoomShift
-
-                // 6. Constrain the shift to prevent panning into the future.
                 timeShift = timeShift.coerceAtLeast(Duration.ZERO)
             }
         }
     ) {
-        val pL = pL_dp.toPx()
-        val pR = pR_dp.toPx()
-        val pT = pT_dp.toPx()
-        val pB = pB_dp.toPx()
-        val plotWidth = size.width - pL - pR
+        val paddingLeftPx: Float = paddingLeftDp.toPx()
+        val paddingRightPx: Float = paddingRightDp.toPx()
+        val paddingTopPx: Float = paddingTopDp.toPx()
+        val paddingBottomPx: Float = paddingBottomDp.toPx()
+        val plotWidth: Float = size.width - paddingLeftPx - paddingRightPx
 
-        val now = Clock.System.now()
-        val visibleDuration = settings.timeRange / scale.toDouble()
-        val endTime = now - timeShift
-        val startTime = endTime - visibleDuration
+        val now: Instant = Clock.System.now()
+        val visibleDuration: Duration = settings.timeRange / scale.toDouble()
+        val endTime: Instant = now - timeShift
+        val startTime: Instant = endTime - visibleDuration
 
-        val startMs = startTime.toEpochMilliseconds()
-        val endMs = endTime.toEpochMilliseconds()
-        val durationMs = visibleDuration.inWholeMilliseconds.toDouble()
+        val startMs: Long = startTime.toEpochMilliseconds()
+        val endMs: Long = endTime.toEpochMilliseconds()
+        val durationMs: Double = visibleDuration.inWholeMilliseconds.toDouble()
 
-        // Dynamically update the Y-Axis Ranges
-        val dynamicRanges = axisConfigs.filter { it.isVisible }.associateWith { config ->
-            val valuesInView = data
+        val dynamicRanges: Map<AxisConfig, AxisRange> = axisConfigs.filter { it.isVisible }.associateWith { config: AxisConfig ->
+            val valuesInView: List<Float> = data
                 .filter { it.timestamp in startTime..endTime }
                 .map(config.valueSelector)
 
-            // Provide a sensible default range if the user pans into a gap with no data.
-            val minVal = valuesInView.minOrNull() ?: 0f
-            val maxVal = valuesInView.maxOrNull() ?: (if (config.name == "CO2") 1000f else 100f)
+            val minVal: Float = valuesInView.minOrNull() ?: 0f
+            val maxVal: Float = valuesInView.maxOrNull() ?: (if (config.name == "CO2") 1000f else 100f)
 
-            val spread = (maxVal - minVal).coerceAtLeast(if (config.name == "CO2") 100f else 5f)
-            val yMin = minVal - spread * 0.1f
-            val yMax = maxVal + spread * 0.1f
+            val spread: Float = (maxVal - minVal).coerceAtLeast(if (config.name == "CO2") 100f else 5f)
+            val yMin: Float = minVal - spread * 0.1f
+            val yMax: Float = maxVal + spread * 0.1f
 
             AxisRange(yMin, yMax, getNiceRange(yMin.toDouble(), yMax.toDouble()))
         }
 
         fun getX(timestamp: Long): Float {
-            val progress = (timestamp - startMs) / durationMs
-            return (pL + progress * plotWidth).toFloat()
+            val progress: Double = (timestamp - startMs) / durationMs
+            return (paddingLeftPx + progress * plotWidth).toFloat()
         }
 
-        // The number of gridlines to draw
-        val gridLineCount = 4
+        val gridLineCount: Int = 4
 
-        // --- DRAWING ---
-        // 1. Y-Axis Labels
-        dynamicRanges.forEach { (axis, range) ->
-            drawYAxis(axis, range, gridLineCount, pL, pR, pT, pB)
+        dynamicRanges.forEach { (axis: AxisConfig, range: AxisRange) ->
+            drawYAxis(axis, range, gridLineCount, paddingLeftPx, paddingRightPx, paddingTopPx, paddingBottomPx)
         }
 
-        // 2. Clipped Data Area
-        clipRect(left = pL, top = pT, right = size.width - pR, bottom = size.height - pB) {
-            // Gridlines (using the first visible axis's range)
-            dynamicRanges.entries.firstOrNull()?.let { (_, range) ->
-                drawYGridlines(range, gridLineCount, pL, pR, pT, pB)
+        clipRect(left = paddingLeftPx, top = paddingTopPx, right = size.width - paddingRightPx, bottom = size.height - paddingBottomPx) {
+            dynamicRanges.entries.firstOrNull()?.let { entry: Map.Entry<AxisConfig, AxisRange> ->
+                drawYGridlines(entry.value, gridLineCount, paddingLeftPx, paddingRightPx, paddingTopPx, paddingBottomPx)
             }
 
-            // Filter the full dataset to what's in view, then sample *that* for drawing.
-            val visibleData = data.filter { it.timestamp in startTime..endTime }
-            val maxDrawPoints = 1000 // Limit the number of points in the path for performance
-            val step = (visibleData.size / maxDrawPoints).coerceAtLeast(1)
-            val sampledDataForDrawing = if (step > 1) {
-                visibleData.filterIndexed { index, _ -> index % step == 0 }
+            val visibleData: List<SensorData> = data.filter { it.timestamp in startTime..endTime }
+            val maxDrawPoints: Int = 1000
+            val step: Int = (visibleData.size / maxDrawPoints).coerceAtLeast(1)
+            val sampledDataForDrawing: List<SensorData> = if (step > 1) {
+                visibleData.filterIndexed { index: Int, _: SensorData -> index % step == 0 }
             } else {
                 visibleData
             }
 
-            // Lines (iterates over dynamicRanges, but draws with sampledDataForDrawing)
-            dynamicRanges.entries.reversed().forEach { (axis, range) ->
-                // Use the SAMPLED data for drawing the path
+            dynamicRanges.entries.reversed().forEach { (axis: AxisConfig, range: AxisRange) ->
                 drawSeries(
                     data = sampledDataForDrawing,
                     valueSelector = axis.valueSelector,
@@ -427,38 +436,36 @@ fun SensorPlot(data: List<SensorData>, settings: HistorySettings, viewModel: Sen
                     color = axis.color,
                     getX = ::getX,
                     maxGapMs = 60000L,
-                    paddingLeft = pL,
-                    paddingTop = pT,
-                    paddingBottom = pB
+                    paddingTop = paddingTopPx,
+                    paddingBottom = paddingBottomPx
                 )
             }
         }
 
-        // 3. X-Axis Labels (With overlap prevention)
-        val xLabelPaint = Paint().asFrameworkPaint().apply {
+        val xLabelPaint: android.graphics.Paint = Paint().asFrameworkPaint().apply {
             isAntiAlias = true
             color = android.graphics.Color.WHITE
             textSize = 10.sp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
         }
 
-        val interval = getNiceTimeInterval(visibleDuration, gridLineCount)
-        val firstTickMs = ceil(startMs / interval.inWholeMilliseconds.toDouble()).toLong() * interval.inWholeMilliseconds
+        val interval: Duration = getNiceTimeInterval(visibleDuration, gridLineCount)
+        val firstTickMs: Long = ceil(startMs / interval.inWholeMilliseconds.toDouble()).toLong() * interval.inWholeMilliseconds
 
-        val labelWidthEstimate = 75.dp.toPx()
-        val pixelsPerTick = (interval.inWholeMilliseconds.toDouble() / durationMs) * plotWidth
-        val step = ceil(labelWidthEstimate / pixelsPerTick).toInt().coerceAtLeast(1)
+        val labelWidthEstimate: Float = 75.dp.toPx()
+        val pixelsPerTick: Double = (interval.inWholeMilliseconds.toDouble() / durationMs) * plotWidth
+        val step: Int = ceil(labelWidthEstimate / pixelsPerTick).toInt().coerceAtLeast(1)
 
-        var count = 0
-        var labelMs = firstTickMs
+        var count: Int = 0
+        var labelMs: Long = firstTickMs
         while (labelMs <= endMs) {
             if (count % step == 0) {
-                val x = getX(labelMs)
-                if (x in (pL - 2f)..(size.width - pR + 2f)) {
+                val x: Float = getX(labelMs)
+                if (x in (paddingLeftPx - 2f)..(size.width - paddingRightPx + 2f)) {
                     drawContext.canvas.nativeCanvas.drawText(
                         formatTimestamp(labelMs, visibleDuration),
                         x,
-                        size.height - pB + 22.dp.toPx(),
+                        size.height - paddingBottomPx + 22.dp.toPx(),
                         xLabelPaint
                     )
                 }
@@ -470,31 +477,25 @@ fun SensorPlot(data: List<SensorData>, settings: HistorySettings, viewModel: Sen
 }
 
 private fun getNiceTimeInterval(duration: Duration, targetTicks: Int = 4): Duration {
-    val niceDurations = listOf(
+    val niceDurations: List<Duration> = listOf(
         1.seconds, 2.seconds, 5.seconds, 10.seconds, 15.seconds, 30.seconds,
         1.minutes, 2.minutes, 5.minutes, 10.minutes, 15.minutes, 30.minutes,
         1.hours, 2.hours, 3.hours, 4.hours, 6.hours, 12.hours,
         1.days, 2.days, 7.days
     )
 
-    val targetInterval = duration / targetTicks.toDouble()
+    val targetInterval: Duration = duration / targetTicks.toDouble()
 
-    // Find the smallest "nice" duration that is greater than or equal to our target.
     return niceDurations.firstOrNull { it >= targetInterval } ?: niceDurations.last()
 }
 
 private fun DrawScope.drawYGridlines(range: AxisRange, gridLines: Int, pL: Float, pR: Float, pT: Float, pB: Float) {
-    val plotHeight = size.height - pT - pB
-    val (niceMin, niceMax) = range.niceRange // Use range from parameter
-    val tickCount = ((niceMax - niceMin) / getNiceRange(niceMin, niceMax, gridLines).let { (it.second - it.first) / gridLines }).toInt().coerceAtLeast(1)
-
-    // Use tickCount (or just iterate based on the niceTick value)
-    val niceTick = (niceMax - niceMin) / gridLines // This assumes the new getNiceRange works perfectly. Let's make it robust.
-    val tickStep = getNiceRange(range.yMin.toDouble(), range.yMax.toDouble(), gridLines).let { (newMin, newMax) -> (newMax - newMin) / gridLines }
+    val plotHeight: Float = size.height - pT - pB
+    val (niceMin: Double, niceMax: Double) = range.niceRange
 
     for (i in 0..gridLines) {
-        val value = niceMin + i * (niceMax - niceMin) / gridLines
-        val y = size.height - pB - ((value - range.yMin) / (range.yMax - range.yMin) * plotHeight).toFloat()
+        val value: Double = niceMin + i * (niceMax - niceMin) / gridLines
+        val y: Float = size.height - pB - ((value - range.yMin) / (range.yMax - range.yMin) * plotHeight).toFloat()
         if (y < pT - 1f || y > size.height - pB + 1f) continue
         if (i > 0) {
             drawLine(color = Color.Gray, start = Offset(pL, y), end = Offset(size.width - pR, y), strokeWidth = 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f)))
@@ -503,24 +504,24 @@ private fun DrawScope.drawYGridlines(range: AxisRange, gridLines: Int, pL: Float
 }
 
 private fun DrawScope.drawYAxis(axis: AxisConfig, range: AxisRange, gridLines: Int, pL: Float, pR: Float, pT: Float, pB: Float) {
-    val plotHeight = size.height - pT - pB
-    val yLabelPaint = Paint().asFrameworkPaint().apply { isAntiAlias = true; color = axis.color.toArgb(); textSize = 16.sp.toPx() }
-    val (niceMin, niceMax) = range.niceRange // Use range from parameter
+    val plotHeight: Float = size.height - pT - pB
+    val yLabelPaint: android.graphics.Paint = Paint().asFrameworkPaint().apply { isAntiAlias = true; color = axis.color.toArgb(); textSize = 16.sp.toPx() }
+    val (niceMin: Double, niceMax: Double) = range.niceRange
 
     for (i in 0..gridLines) {
-        val value = niceMin + i * (niceMax - niceMin) / gridLines
-        val y = size.height - pB - ((value - range.yMin) / (range.yMax - range.yMin) * plotHeight).toFloat()
+        val value: Double = niceMin + i * (niceMax - niceMin) / gridLines
+        val y: Float = size.height - pB - ((value - range.yMin) / (range.yMax - range.yMin) * plotHeight).toFloat()
         if (y < pT - 1f || y > size.height - pB + 1f) continue
 
-        val label = if (axis.name == "CO2") "${value.toInt()}" else "%.1f".format(value)
-        val labelX = if (axis.position == AxisPosition.LEFT) pL - yLabelPaint.measureText(label) - 4.dp.toPx()
+        val label: String = if (axis.name == "CO2") "${value.toInt()}" else "%.1f".format(value)
+        val labelX: Float = if (axis.position == AxisPosition.LEFT) pL - yLabelPaint.measureText(label) - 4.dp.toPx()
         else size.width - pR + 4.dp.toPx()
         drawContext.canvas.nativeCanvas.drawText(label, labelX, y + yLabelPaint.textSize / 2, yLabelPaint)
     }
 }
 
 private fun formatTimestamp(timestamp: Long, range: Duration): String {
-    val format = when {
+    val format: String = when {
         range > 2.days -> "MM/dd"
         range > 1.hours -> "HH:mm"
         else -> "HH:mm:ss"
@@ -531,20 +532,32 @@ private fun formatTimestamp(timestamp: Long, range: Duration): String {
 private fun getNiceRange(min: Double, max: Double, ticks: Int = 4): Pair<Double, Double> {
     if (min == max) return Pair(min - 1, max + 1)
 
-    val range = max - min
-    val unroundedTickSize = range / ticks
+    val range: Double = max - min
+    val unroundedTickSize: Double = range / ticks
 
-    // Calculate a "nice" tick size, rounding up to a power of 10 multiplied by 1, 2, or 5
-    val x = ceil(log10(unroundedTickSize) - 1)
-    val pow10x = 10.0.pow(x)
-    val niceTick = ceil(unroundedTickSize / pow10x) * pow10x
+    val x: Double = ceil(log10(unroundedTickSize) - 1)
+    val pow10x: Double = 10.0.pow(x)
+    val niceTick: Double = ceil(unroundedTickSize / pow10x) * pow10x
 
-    val niceMin = floor(min / niceTick) * niceTick
-    val niceMax = ceil(max / niceTick) * niceTick
+    val niceMin: Double = floor(min / niceTick) * niceTick
+    val niceMax: Double = ceil(max / niceTick) * niceTick
 
     return Pair(niceMin, niceMax)
 }
 
+/**
+ * Draws the series of data points as a continuous line on the canvas.
+ *
+ * @param data The points to draw.
+ * @param valueSelector Selects the property to draw.
+ * @param minVal Minimum y value to scale by.
+ * @param maxVal Maximum y value to scale by.
+ * @param color Color of the line.
+ * @param getX Function returning the x position on canvas.
+ * @param maxGapMs The max permitted time gap between points before line is broken.
+ * @param paddingTop Top canvas padding.
+ * @param paddingBottom Bottom canvas padding.
+ */
 fun DrawScope.drawSeries(
     data: List<SensorData>,
     valueSelector: (SensorData) -> Float,
@@ -553,27 +566,26 @@ fun DrawScope.drawSeries(
     color: Color,
     getX: (Long) -> Float,
     maxGapMs: Long,
-    paddingLeft: Float,
     paddingTop: Float,
     paddingBottom: Float
 ) {
-    val path = Path()
+    val path: Path = Path()
     var lastTimestamp: Long? = null
-    val plotHeight = size.height - paddingTop - paddingBottom
+    val plotHeight: Float = size.height - paddingTop - paddingBottom
 
-    data.forEach { sensorData ->
-        val currentTimestamp = sensorData.timestamp.toEpochMilliseconds()
-        val x = getX(currentTimestamp)
+    data.forEach { sensorData: SensorData ->
+        val currentTimestamp: Long = sensorData.timestamp.toEpochMilliseconds()
+        val x: Float = getX(currentTimestamp)
         
-        val rawY = valueSelector(sensorData)
-        val normalizedY = if (maxVal == minVal) 0.5f else (rawY - minVal) / (maxVal - minVal)
-        val y = size.height - paddingBottom - (normalizedY.coerceIn(0f, 1f) * plotHeight)
+        val rawY: Float = valueSelector(sensorData)
+        val normalizedY: Float = if (maxVal == minVal) 0.5f else (rawY - minVal) / (maxVal - minVal)
+        val y: Float = size.height - paddingBottom - (normalizedY.coerceIn(0f, 1f) * plotHeight)
 
-        val isFirstPoint = lastTimestamp == null
+        val isFirstPoint: Boolean = lastTimestamp == null
         if (isFirstPoint) {
             path.moveTo(x, y)
         } else {
-            val gap = currentTimestamp - (lastTimestamp ?: 0)
+            val gap: Long = currentTimestamp - lastTimestamp
             if (gap > maxGapMs) {
                 path.moveTo(x, y)
             } else {
@@ -585,6 +597,11 @@ fun DrawScope.drawSeries(
     drawPath(path = path, color = color, style = Stroke(width = 2.dp.toPx()))
 }
 
+/**
+ * Screen showing disconnected state.
+ *
+ * @param onScanClicked Callback when scan button is clicked.
+ */
 @Composable
 fun DisconnectedScreen(onScanClicked: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -594,6 +611,13 @@ fun DisconnectedScreen(onScanClicked: () -> Unit) {
     }
 }
 
+/**
+ * Screen showing scanning state.
+ *
+ * @param devices List of discovered devices.
+ * @param onDeviceClicked Callback when a device is clicked.
+ * @param onStopScanClicked Callback when stop scan button is clicked.
+ */
 @Composable
 fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit, onStopScanClicked: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -601,13 +625,19 @@ fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (Discovered
         Spacer(modifier = Modifier.height(16.dp))
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (devices.isEmpty()) Text("No devices found yet...", modifier = Modifier.align(Alignment.Center))
-            else LazyColumn { items(devices) { DeviceListItem(it) { onDeviceClicked(it) } } }
+            else LazyColumn { items(devices) { device: DiscoveredDevice -> DeviceListItem(device) { onDeviceClicked(device) } } }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onStopScanClicked, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) { Text("Stop Scan") }
     }
 }
 
+/**
+ * Item representing a single discovered BLE device.
+ *
+ * @param device The discovered device.
+ * @param onClick Callback when the device is clicked.
+ */
 @Composable
 fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
@@ -619,6 +649,11 @@ fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Screen showing the connecting state.
+ *
+ * @param deviceName Name of the device currently being connected to.
+ */
 @Composable
 fun ConnectingScreen(deviceName: String?) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -628,6 +663,14 @@ fun ConnectingScreen(deviceName: String?) {
     }
 }
 
+/**
+ * Screen showing error messages.
+ *
+ * @param message The error message to display.
+ * @param onRerequestClicked Callback when primary button is clicked.
+ * @param onSettingsClicked Callback to go to settings, if null button is hidden.
+ * @param firstButtonText Text to display on the primary button.
+ */
 @Composable
 fun ErrorScreen(message: String, onRerequestClicked: () -> Unit, onSettingsClicked: (() -> Unit)?, firstButtonText: String) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -636,6 +679,6 @@ fun ErrorScreen(message: String, onRerequestClicked: () -> Unit, onSettingsClick
         Text(message, modifier = Modifier.padding(horizontal = 16.dp), textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onRerequestClicked) { Text(firstButtonText) }
-        onSettingsClicked?.let { Spacer(modifier = Modifier.height(8.dp)); Button(onClick = it) { Text("Go to Settings") } }
+        onSettingsClicked?.let { callback: () -> Unit -> Spacer(modifier = Modifier.height(8.dp)); Button(onClick = callback) { Text("Go to Settings") } }
     }
 }
