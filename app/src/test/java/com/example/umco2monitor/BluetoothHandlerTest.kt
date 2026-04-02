@@ -12,6 +12,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import java.util.UUID
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -25,7 +26,7 @@ import org.junit.jupiter.api.Test
  *
  * See [testing documentation](http://d.android.com/tools/testing).
  */
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class BluetoothHandlerTest {
 
     private lateinit var testDispatcher: CoroutineDispatcher
@@ -77,6 +78,9 @@ class BluetoothHandlerTest {
         // Create two 2-byte arrays, corresponding to readings of 68 F (20 C) and of 104 F (40 C)
         val value20C: ByteArray = byteArrayOf(0xD0.toByte(), 0x07)
         val value40C: ByteArray = byteArrayOf(0xA0.toByte(), 0x0F.toByte())
+        val expected20C: Float = 20f * 1.8f + 32f
+        val expected40C: Float = 40f * 1.8f + 32f
+
 
         // Define the status as success
         val status: GattStatus = GattStatus.SUCCESS
@@ -85,12 +89,12 @@ class BluetoothHandlerTest {
         BluetoothHandler.peripheralCallback.onCharacteristicUpdate(peripheral, value20C,
             characteristic, status)
         advanceUntilIdle()
-        assertEquals(20.toShort(), BluetoothHandler.temperatureValue.value)
+        assertEquals(expected20C, BluetoothHandler.temperatureValue.value)
 
         BluetoothHandler.peripheralCallback.onCharacteristicUpdate(peripheral, value40C,
             characteristic, status)
         advanceUntilIdle()
-        assertEquals(40.toShort(), BluetoothHandler.temperatureValue.value)
+        assertEquals(expected40C, BluetoothHandler.temperatureValue.value)
     }
 
     @Test
@@ -104,7 +108,7 @@ class BluetoothHandlerTest {
 
         // Create two 2-byte arrays, corresponding to readings of 0% and of 100%
         val value0Percent: ByteArray = byteArrayOf(0x00, 0x00)
-        val value100Percent: ByteArray = byteArrayOf(0x64, 0x00)
+        val value100Percent: ByteArray = byteArrayOf(0x10, 0x27)
 
         // Define the status as success
         val status: GattStatus = GattStatus.SUCCESS
@@ -113,12 +117,12 @@ class BluetoothHandlerTest {
         BluetoothHandler.peripheralCallback.onCharacteristicUpdate(peripheral, value0Percent,
             characteristic, status)
         advanceUntilIdle()
-        assertEquals(0.toUShort(), BluetoothHandler.humidityValue.value)
+        assertEquals(0f, BluetoothHandler.humidityValue.value)
 
         BluetoothHandler.peripheralCallback.onCharacteristicUpdate(peripheral, value100Percent,
             characteristic, status)
         advanceUntilIdle()
-        assertEquals(100.toUShort(), BluetoothHandler.humidityValue.value)
+        assertEquals(100f, BluetoothHandler.humidityValue.value)
     }
 
     @Test
@@ -414,9 +418,9 @@ class BluetoothHandlerTest {
         // Verify that the central manager is scanning
         verify { BluetoothHandler.centralManager.scanForPeripheralsWithServices(any()) }
 
-
+        // REMOVED: The timer has been removed from the scanner
         // Verify that the timer was set on the bleHandler
-        verify { BluetoothHandler.bleHandler.postDelayed(any(), 15000) }
+//        verify { BluetoothHandler.bleHandler.postDelayed(any(), 15000) }
     }
 
     @Test
@@ -447,8 +451,17 @@ class BluetoothHandlerTest {
 
         // Verify that the state is Connected and the correct peripheral is set
         val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
-        assert(state is BleConnectionState.Connected)
-        assertEquals(peripheral, (state as BleConnectionState.Connected).peripheral)
+        assert(state is BleConnectionState.Connecting)
+        assertEquals(peripheral.name, (state as BleConnectionState.Connecting).deviceName)
+
+        // Connect to the device
+        BluetoothHandler.centralManagerCallback.onConnected(peripheral)
+        advanceUntilIdle()
+
+        // Verify that the state is Connected and the correct peripheral is set
+        val connectedState: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(connectedState is BleConnectionState.Connected)
+        assertEquals(peripheral, (connectedState as BleConnectionState.Connected).peripheral)
 
         // Verify that centralManager.connect was called
         verify { BluetoothHandler.centralManager.connect(peripheral, BluetoothHandler.peripheralCallback) }
@@ -464,8 +477,9 @@ class BluetoothHandlerTest {
         advanceUntilIdle()
 
         // Verify that we are connected first
-        var state: BleConnectionState = BluetoothHandler.bleConnectionState.value
-        assert(state is BleConnectionState.Connected)
+        BluetoothHandler.centralManagerCallback.onConnected(peripheral)
+        advanceUntilIdle()
+        assert(BluetoothHandler.bleConnectionState.value is BleConnectionState.Connected)
 
         // Call disconnect
         BluetoothHandler.disconnect(peripheral)
@@ -479,7 +493,7 @@ class BluetoothHandlerTest {
         advanceUntilIdle()
 
         // Verify that the state is Disconnected
-        state = BluetoothHandler.bleConnectionState.value
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
         assert(state is BleConnectionState.Disconnected)
     }
 }
