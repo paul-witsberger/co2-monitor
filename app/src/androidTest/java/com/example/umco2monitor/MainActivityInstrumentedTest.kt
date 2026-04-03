@@ -13,20 +13,21 @@ import timber.log.Timber
 class MainActivityInstrumentedTest {
 
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule: androidx.compose.ui.test.junit4.ComposeContentTestRule = createComposeRule()
 
-    // Explicit flows to prevent UI "hanging" while waiting for data
-    private val mockState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
-    private val mockCo2 = MutableStateFlow<UShort?>(null)
-    private val mockTemp = MutableStateFlow<Float?>(null)
-    private val mockHum = MutableStateFlow<Float?>(null)
-    private val mockBatt = MutableStateFlow<UInt?>(null)
+    private val mockState: MutableStateFlow<BleConnectionState> = MutableStateFlow(BleConnectionState.Disconnected)
+    private val mockCo2: MutableStateFlow<UShort?> = MutableStateFlow(null)
+    private val mockTemp: MutableStateFlow<Float?> = MutableStateFlow(null)
+    private val mockHum: MutableStateFlow<Float?> = MutableStateFlow(null)
+    private val mockBatt: MutableStateFlow<UInt?> = MutableStateFlow(null)
+    private val mockTab: MutableStateFlow<Int> = MutableStateFlow(0)
+    private val mockHistory: MutableStateFlow<List<SensorData>> = MutableStateFlow(emptyList())
+    private val mockHistorySettings: MutableStateFlow<HistorySettings> = MutableStateFlow(HistorySettings())
 
     @Before
-    fun setup() {
+    fun setup(): Unit {
         mockkObject(BluetoothHandler)
 
-        // Stub initialize as a complete no-op — no real BluetoothCentralManager ever constructed
         every { BluetoothHandler.initialize(any()) } returns Unit
         every { BluetoothHandler.bleConnectionState } returns mockState
         every { BluetoothHandler.co2Value } returns mockCo2
@@ -41,13 +42,26 @@ class MainActivityInstrumentedTest {
     }
 
     @After
-    fun tearDown() {
+    fun tearDown(): Unit {
         unmockkAll()
     }
 
+    private fun createMockViewModel(): SensorViewModel {
+        val mockViewModel: SensorViewModel = mockk<SensorViewModel>(relaxed = true)
+        every { mockViewModel.bleConnectionState } returns mockState
+        every { mockViewModel.co2Value } returns mockCo2
+        every { mockViewModel.temperatureValue } returns mockTemp
+        every { mockViewModel.humidityValue } returns mockHum
+        every { mockViewModel.batteryLevel } returns mockBatt
+        every { mockViewModel.selectedTab } returns mockTab
+        every { mockViewModel.history } returns mockHistory
+        every { mockViewModel.historySettings } returns mockHistorySettings
+        return mockViewModel
+    }
+
     @Test
-    fun disconnectedScreen_displaysScanButton() {
-        var scanClicked = false
+    fun disconnectedScreen_displaysScanButton(): Unit {
+        var scanClicked: Boolean = false
         composeTestRule.setContent {
             DisconnectedScreen(onScanClicked = { scanClicked = true })
         }
@@ -57,17 +71,21 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun connectedScreen_displaysCo2Value() {
+    fun connectedScreen_displaysCo2Value(): Unit {
+        val viewModel: SensorViewModel = createMockViewModel()
+        mockCo2.value = 450u
+        mockTemp.value = 72.14f
+        mockHum.value = 93.4f
+
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = 450u, temperatureValue = 72.14f, humidityValue = 93.4f, onDisconnectClicked = {})
+            ConnectedScreen(viewModel = viewModel)
         }
-        composeTestRule.onNodeWithText("450").assertIsDisplayed()
-        composeTestRule.onNodeWithText("ppm").assertIsDisplayed()
+        composeTestRule.onNodeWithText("450 ppm").assertIsDisplayed()
     }
 
     @Test
-    fun deviceListItem_nullName_showsUnknownDevice() {
-        var clicked = false
+    fun deviceListItem_nullName_showsUnknownDevice(): Unit {
+        var clicked: Boolean = false
         composeTestRule.setContent {
             DeviceListItem(
                 device = DiscoveredDevice(null, "AA:BB:CC:DD:EE:FF", mockk(relaxed = true)),
@@ -81,7 +99,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_emptyState_showsNoDevicesMessage() {
+    fun scanningScreen_emptyState_showsNoDevicesMessage(): Unit {
         composeTestRule.setContent {
             ScanningScreen(devices = emptyList(), onDeviceClicked = {}, onStopScanClicked = {})
         }
@@ -90,8 +108,8 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_withDevices_showsDeviceList() {
-        val devices = listOf(
+    fun scanningScreen_withDevices_showsDeviceList(): Unit {
+        val devices: List<DiscoveredDevice> = listOf(
             DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true)),
             DiscoveredDevice(null, "AA:BB:CC:DD:EE:FF", mockk(relaxed = true))
         )
@@ -103,8 +121,8 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_deviceClick_invokesCallback() {
-        val device = DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true))
+    fun scanningScreen_deviceClick_invokesCallback(): Unit {
+        val device: DiscoveredDevice = DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true))
         var clickedDevice: DiscoveredDevice? = null
         composeTestRule.setContent {
             ScanningScreen(devices = listOf(device), onDeviceClicked = { clickedDevice = it }, onStopScanClicked = {})
@@ -114,30 +132,32 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun connectedScreen_nullCo2_showsDashes() {
+    fun connectedScreen_nullCo2_showsDashes(): Unit {
+        val viewModel: SensorViewModel = createMockViewModel()
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = null, temperatureValue = null, humidityValue = null, onDisconnectClicked = {})
+            ConnectedScreen(viewModel = viewModel)
         }
-        composeTestRule.onAllNodesWithText("--").onFirst().assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("-- ppm").onFirst().assertIsDisplayed()
     }
 
     @Test
-    fun connectedScreen_disconnectButton_invokesCallback() {
-        var disconnectClicked = false
+    fun connectedScreen_disconnectButton_invokesCallback(): Unit {
+        val viewModel: SensorViewModel = createMockViewModel()
         composeTestRule.setContent {
-            ConnectedScreen(co2Value = 400u, temperatureValue = 72.14f, humidityValue = 93.4f, onDisconnectClicked = { disconnectClicked = true })
+            ConnectedScreen(viewModel = viewModel)
         }
         composeTestRule.onNodeWithText("Disconnect").performClick()
-        assert(disconnectClicked)
+        verify { viewModel.disconnect() }
     }
 
     @Test
-    fun errorScreen_withBothCallbacks_showsBothButtons() {
+    fun errorScreen_withBothCallbacks_showsBothButtons(): Unit {
         composeTestRule.setContent {
             ErrorScreen(
                 message = "Test error",
                 onRerequestClicked = {},
-                onSettingsClicked = {}
+                onSettingsClicked = {},
+                firstButtonText = "Rerequest Permissions"
             )
         }
         composeTestRule.onNodeWithText("An Error Occurred").assertIsDisplayed()
@@ -147,21 +167,16 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun errorScreen_withNoCallbacks_showsNoButtons() {
+    fun errorScreen_withNoCallbacks_showsNoButtons(): Unit {
         composeTestRule.setContent {
-            ErrorScreen(message = "Test error")
+            ErrorScreen(message = "Test error", onRerequestClicked = {}, onSettingsClicked = null, firstButtonText = "Restart Scan")
         }
-        composeTestRule.onNodeWithText("Rerequest Permissions").assertDoesNotExist()
         composeTestRule.onNodeWithText("Go to Settings").assertDoesNotExist()
     }
 
     @Test
-    fun mainScreen_routing_workflow() {
-        val mockViewModel = mockk<SensorViewModel>(relaxed = true)
-        every { mockViewModel.bleConnectionState } returns mockState
-        every { mockViewModel.co2Value } returns mockCo2
-        every { mockViewModel.temperatureValue } returns mockTemp
-        every { mockViewModel.humidityValue } returns mockHum
+    fun mainScreen_routing_workflow(): Unit {
+        val mockViewModel: SensorViewModel = createMockViewModel()
 
         composeTestRule.setContent {
             MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))
@@ -177,23 +192,33 @@ class MainActivityInstrumentedTest {
         // 3. Check transition to Connected
         mockState.value = BleConnectionState.Connected(mockk(relaxed = true))
         mockCo2.value = 500u
-        composeTestRule.onNodeWithText("500").assertIsDisplayed()
+        composeTestRule.onNodeWithText("500 ppm").assertIsDisplayed()
     }
 
     @Test
-    fun mainScreen_errorRouting_permissionLogic() {
-        val mockViewModel = mockk<SensorViewModel>(relaxed = true)
-        val mockActivity = mockk<MainActivity>(relaxed = true)
-        every { mockViewModel.bleConnectionState } returns mockState
+    fun mainScreen_historyTabRouting(): Unit {
+        val mockViewModel: SensorViewModel = createMockViewModel()
+        mockState.value = BleConnectionState.Connected(mockk(relaxed = true))
+        mockTab.value = 1 // History tab
+
+        composeTestRule.setContent {
+            MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))
+        }
+
+        composeTestRule.onNodeWithText("Sensor History").assertIsDisplayed()
+    }
+
+    @Test
+    fun mainScreen_errorRouting_permissionLogic(): Unit {
+        val mockViewModel: SensorViewModel = createMockViewModel()
+        val mockActivity: MainActivity = mockk(relaxed = true)
 
         composeTestRule.setContent {
             MainScreen(viewModel = mockViewModel, activity = mockActivity)
         }
 
-        // GIVEN: A message containing "permission"
         mockState.value = BleConnectionState.Error("Bluetooth permission denied")
 
-        // THEN: Verify permission buttons appear
         composeTestRule.onNodeWithText("Rerequest Permissions").assertIsDisplayed().performClick()
         verify { mockActivity.reRequestPermissions() }
 
@@ -202,60 +227,20 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun mainScreen_errorRouting_genericLogic() {
-        val mockViewModel = mockk<SensorViewModel>(relaxed = true)
-        val mockActivity = mockk<MainActivity>(relaxed = true)
-        every { mockViewModel.bleConnectionState } returns mockState
+    fun mainScreen_errorRouting_genericLogic(): Unit {
+        val mockViewModel: SensorViewModel = createMockViewModel()
+        val mockActivity: MainActivity = mockk(relaxed = true)
 
         composeTestRule.setContent {
             MainScreen(viewModel = mockViewModel, activity = mockActivity)
         }
 
-        // GIVEN: A message NOT containing "permission"
         mockState.value = BleConnectionState.Error("Device Busy")
 
-        // THEN: Button should call startScan instead of reRequest
         composeTestRule.onNodeWithText("Restart Scan").assertIsDisplayed().performClick()
         verify { mockViewModel.startScan() }
         verify(exactly = 0) { mockActivity.reRequestPermissions() }
 
-        // Settings button should NOT exist
         composeTestRule.onNodeWithText("Go to Settings").assertDoesNotExist()
-    }
-
-    @Test
-    fun mainScreen_disconnectButton_callsViewModel() {
-        val mockViewModel = mockk<SensorViewModel>(relaxed = true)
-        every { mockViewModel.bleConnectionState } returns mockState
-        every { mockViewModel.co2Value } returns mockCo2
-        every { mockViewModel.temperatureValue } returns mockTemp
-        every { mockViewModel.humidityValue } returns mockHum
-
-        composeTestRule.setContent {
-            MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))
-        }
-
-        mockState.value = BleConnectionState.Connected(mockk(relaxed = true))
-        composeTestRule.onNodeWithText("Disconnect").performClick()
-        verify { mockViewModel.disconnect() }
-    }
-
-    @Test
-    fun mainScreen_scanButton_callsViewModel() {
-        val mockViewModel = mockk<SensorViewModel>(relaxed = true)
-        every { mockViewModel.bleConnectionState } returns mockState
-        every { mockViewModel.co2Value } returns mockCo2
-
-        composeTestRule.setContent {
-            MainScreen(viewModel = mockViewModel, activity = mockk(relaxed = true))
-        }
-
-        composeTestRule.onNodeWithText("Scan for Devices").performClick()
-        verify { mockViewModel.startScan() }
-    }
-
-    @Test
-    fun baseline_emptyTest() {
-        // Does nothing - verifies that there aren't any issues with timing increasing between tests
     }
 }

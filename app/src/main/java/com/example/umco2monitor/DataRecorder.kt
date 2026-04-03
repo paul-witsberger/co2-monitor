@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.Manifest
+import android.annotation.SuppressLint
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -32,7 +33,8 @@ import kotlin.time.Instant
 class DataRecorder(
     private val context: Context,
     private val repository: SensorRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val sdkInt: Int = android.os.Build.VERSION.SDK_INT
 ) {
     private val notificationManager: NotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -148,9 +150,10 @@ class DataRecorder(
         }
     }
 
+    @SuppressLint("InlinedApi")
     private fun sendAlarmNotification(title: String, message: String, isUrgent: Boolean, notificationId: Int) {
         // On API 33 and above, POST_NOTIFICATIONS permission is required
-        val postNotificationsGranted: Boolean = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        val postNotificationsGranted: Boolean = if (sdkInt >= android.os.Build.VERSION_CODES.TIRAMISU) {
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         } else {
             true // On API 32 and below, no runtime permission is needed

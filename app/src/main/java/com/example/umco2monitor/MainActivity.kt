@@ -476,7 +476,7 @@ fun SensorPlot(data: List<SensorData>, settings: HistorySettings) {
     }
 }
 
-private fun getNiceTimeInterval(duration: Duration, targetTicks: Int = 4): Duration {
+internal fun getNiceTimeInterval(duration: Duration, targetTicks: Int = 4): Duration {
     val niceDurations: List<Duration> = listOf(
         1.seconds, 2.seconds, 5.seconds, 10.seconds, 15.seconds, 30.seconds,
         1.minutes, 2.minutes, 5.minutes, 10.minutes, 15.minutes, 30.minutes,
@@ -529,18 +529,27 @@ private fun formatTimestamp(timestamp: Long, range: Duration): String {
     return SimpleDateFormat(format, Locale.getDefault()).format(Date(timestamp))
 }
 
-private fun getNiceRange(min: Double, max: Double, ticks: Int = 4): Pair<Double, Double> {
-    if (min == max) return Pair(min - 1, max + 1)
+/**
+ * Calculates a "nice" range for the axis that starts and ends on clean multiples of a tick size.
+ *
+ * @param min The minimum data value.
+ * @param max The maximum data value.
+ * @param ticks The target number of intervals (default 4).
+ * @return A pair representing the nice min and nice max.
+ */
+internal fun getNiceRange(min: Double, max: Double, ticks: Int = 4): Pair<Double, Double> {
+    if (min == max) return Pair(min - 1.0, max + 1.0)
 
     val range: Double = max - min
     val unroundedTickSize: Double = range / ticks
 
-    val x: Double = ceil(log10(unroundedTickSize) - 1)
+    val x: Double = ceil(log10(unroundedTickSize) - 1.0)
     val pow10x: Double = 10.0.pow(x)
     val niceTick: Double = ceil(unroundedTickSize / pow10x) * pow10x
 
-    val niceMin: Double = floor(min / niceTick) * niceTick
-    val niceMax: Double = ceil(max / niceTick) * niceTick
+    val epsilon: Double = 1e-10
+    val niceMin: Double = floor((min / niceTick) + epsilon) * niceTick
+    val niceMax: Double = ceil((max / niceTick) - epsilon) * niceTick
 
     return Pair(niceMin, niceMax)
 }

@@ -14,28 +14,30 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.time.Duration.Companion.days
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SensorViewModelTest {
 
     private lateinit var viewModel: SensorViewModel
-    private val application = mockk<Application>(relaxed = true)
+    private val application: Application = mockk<Application>(relaxed = true)
     private val testDispatcher = UnconfinedTestDispatcher()
 
-    private val mockBleState = MutableStateFlow<BleConnectionState>(BleConnectionState.Disconnected)
-    private val mockCo2Value = MutableStateFlow<UShort?>(null)
-    private val mockTemp = MutableStateFlow<Float?>(null)
-    private val mockHum = MutableStateFlow<Float?>(null)
-    private val mockBatt = MutableStateFlow<UInt?>(null)
+    private val mockBleState: MutableStateFlow<BleConnectionState> = MutableStateFlow(BleConnectionState.Disconnected)
+    private val mockCo2Value: MutableStateFlow<UShort?> = MutableStateFlow(null)
+    private val mockTemp: MutableStateFlow<Float?> = MutableStateFlow(null)
+    private val mockHum: MutableStateFlow<Float?> = MutableStateFlow(null)
+    private val mockBatt: MutableStateFlow<UInt?> = MutableStateFlow(null)
 
     @BeforeEach
-    fun setup() {
+    fun setup(): Unit {
         Dispatchers.setMain(testDispatcher)
 
         // 1. Mock Android Framework Statics (Prevents crashes)
@@ -68,18 +70,18 @@ class SensorViewModelTest {
     }
 
     @AfterEach
-    fun tearDown() {
+    fun tearDown(): Unit {
         Dispatchers.resetMain()
         unmockkAll()
     }
 
     @Test
-    fun `startScan should call onPermissionsDenied when permissions missing on Android S`() {
+    fun startScanShouldCallOnPermissionsDeniedWhenPermissionsMissingOnAndroidS(): Unit {
         // GIVEN: Permissions are denied
         every { ActivityCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_DENIED
 
         // GIVEN: Create a SPY of the real ViewModel
-        val spyViewModel = spyk(viewModel, recordPrivateCalls = true)
+        val spyViewModel: SensorViewModel = spyk(viewModel, recordPrivateCalls = true)
 
         // WHEN: Calling startScan and EXPLICITLY passing Android S (31)
         spyViewModel.startScan(Build.VERSION_CODES.S)
@@ -90,7 +92,7 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun `startScan should delegate to BluetoothHandler when permissions granted`() {
+    fun startScanShouldDelegateToBluetoothHandlerWhenPermissionsGranted(): Unit {
         // GIVEN: Permissions are granted
         every { ActivityCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
 
@@ -101,45 +103,64 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun `init should initialize BluetoothHandler and observe state`() {
+    fun initShouldInitializeBluetoothHandlerAndObserveState(): Unit {
         verify { BluetoothHandler.initialize(application) }
-        val newState = BleConnectionState.Scanning(emptyList())
+        val newState: BleConnectionState.Scanning = BleConnectionState.Scanning(emptyList())
         mockBleState.value = newState
         assertEquals(newState, viewModel.bleConnectionState.value)
     }
 
     @Test
-    fun `onPermissionsDenied should set state to Error`() {
+    fun onPermissionsDeniedShouldSetStateToError(): Unit {
         viewModel.onPermissionsDenied()
         assertTrue(viewModel.bleConnectionState.value is BleConnectionState.Error)
     }
 
     @Test
-    fun `stopScan should delegate to BluetoothHandler`() {
+    fun stopScanShouldDelegateToBluetoothHandler(): Unit {
         viewModel.stopScan()
         verify { BluetoothHandler.stopScan() }
     }
 
     @Test
-    fun `connectToDevice should delegate to BluetoothHandler`() {
-        val peripheral = mockk<BluetoothPeripheral>()
-        val device = DiscoveredDevice("Test", "00:00", peripheral)
+    fun connectToDeviceShouldDelegateToBluetoothHandler(): Unit {
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>()
+        val device: DiscoveredDevice = DiscoveredDevice("Test", "00:00", peripheral)
         viewModel.connectToDevice(device)
         verify { BluetoothHandler.connect(peripheral) }
     }
 
     @Test
-    fun `disconnect should delegate to BluetoothHandler when connected`() {
-        val peripheral = mockk<BluetoothPeripheral>()
+    fun disconnectShouldDelegateToBluetoothHandlerWhenConnected(): Unit {
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>()
         mockBleState.value = BleConnectionState.Connected(peripheral)
         viewModel.disconnect()
         verify { BluetoothHandler.disconnect(peripheral) }
     }
 
     @Test
-    fun `SensorViewModelFactory should create SensorViewModel`() {
-        val factory = SensorViewModelFactory(application)
-        val createdViewModel = factory.create(SensorViewModel::class.java)
+    fun sensorViewModelFactoryShouldCreateSensorViewModel(): Unit {
+        val factory: SensorViewModelFactory = SensorViewModelFactory(application)
+        val createdViewModel: SensorViewModel = factory.create(SensorViewModel::class.java)
         assertEquals(SensorViewModel::class.java, createdViewModel::class.java)
+    }
+
+    @Test
+    fun setSelectedTabUpdatesSelectedTab(): Unit {
+        viewModel.setSelectedTab(1)
+        assertEquals(1, viewModel.selectedTab.value)
+        viewModel.setSelectedTab(0)
+        assertEquals(0, viewModel.selectedTab.value)
+    }
+
+    @Test
+    fun updateHistorySettingsUpdatesSettingsAndEmitsSignal(): Unit = runTest {
+        viewModel.updateHistorySettings(showCo2 = false, timeRange = 1.days)
+        
+        val settings: HistorySettings = viewModel.historySettings.value
+        assertEquals(false, settings.showCo2)
+        assertEquals(1.days, settings.timeRange)
+        // Ensure defaults are still present
+        assertEquals(true, settings.showTemperature)
     }
 }
