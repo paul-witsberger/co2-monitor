@@ -20,7 +20,7 @@ class SensorDatabaseInstrumentedTest {
     private lateinit var dao: SensorDataDao
 
     @Before
-    fun setup(): Unit {
+    fun setup() {
         database = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext(),
             SensorDatabase::class.java
@@ -29,7 +29,7 @@ class SensorDatabaseInstrumentedTest {
     }
 
     @After
-    fun teardown(): Unit {
+    fun teardown() {
         database.close()
     }
 

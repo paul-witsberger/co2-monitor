@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// TODO: Implement a "Help" menu where the user can learn more about how to use and interact with the app
 /**
  * Main Compose screen displaying either disconnected, scanning, connecting, connected, or error states.
  *
@@ -134,12 +135,18 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
     val bleConnectionState: BleConnectionState by viewModel.bleConnectionState.collectAsState()
 
     LaunchedEffect(bleConnectionState) {
-        if (bleConnectionState is BleConnectionState.Connected) {
-            val intent: Intent = Intent(activity, MeasurementService::class.java)
-            activity.startService(intent)
-        } else {
-            val intent: Intent = Intent(activity, MeasurementService::class.java)
-            activity.stopService(intent)
+        when (bleConnectionState) {
+            is BleConnectionState.Connected,
+            is BleConnectionState.Connecting -> {
+                // Keep the service alive during connections and auto-reconnect attempts
+                val intent: Intent = Intent(activity, MeasurementService::class.java)
+                activity.startService(intent)
+            }
+            else -> {
+                // Stop the service if Disconnected intentionally or on Error
+                val intent: Intent = Intent(activity, MeasurementService::class.java)
+                activity.stopService(intent)
+            }
         }
     }
 

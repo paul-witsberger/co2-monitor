@@ -1,25 +1,28 @@
 package com.example.umco2monitor
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.Manifest
-import android.annotation.SuppressLint
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import timber.log.Timber
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
+import timber.log.Timber
 
 /**
  * Handles the logic for recording sensor data to persistent storage and checking for alarm conditions.
@@ -44,12 +47,28 @@ class DataRecorder(
     private val highCo2Alarm: AlarmState = AlarmState()
     private val lowCo2Alarm: AlarmState = AlarmState()
 
+    // TODO: Implement user-customizable CO2 threshold below which the alarm will trigger.
+    private val lowCo2Threshold: UShort = 400u
+    private val highCo2Threshold: UShort = 2000u
+
+    private var watchdogJob: Job? = null
+
     init {
         createNotificationChannels()
         observeAndRecordData()
     }
 
     private fun observeAndRecordData() {
+        // Monitor CO2 independently for life-saving alarms
+        BluetoothHandler.co2Value
+            .onEach { co2 ->
+                if (co2 != null) {
+                    resetWatchdog()
+                    checkAlarms(co2)
+                }
+            }
+            .launchIn(scope)
+
         combine(
             BluetoothHandler.co2Value,
             BluetoothHandler.temperatureValue,
@@ -59,24 +78,35 @@ class DataRecorder(
                 SensorDataEntity(co2Reading = co2, temperatureReading = temp, humidityReading = humid)
             } else null
         }
-        .debounce(1000)
         .onEach { entity: SensorDataEntity? ->
             entity?.let {
                 Timber.d("Recording data: $it")
                 repository.insert(it)
-                checkAlarms(it)
             }
         }
         .launchIn(scope)
     }
 
-    private fun checkAlarms(data: SensorDataEntity) {
+    private fun resetWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            delay(30.seconds) // If no data received for 15 seconds
+            sendAlarmNotification(
+                title = "URGENT: Sensor Connection Lost",
+                message = "No CO2 data received for 30 seconds. Check device and battery.",
+                isUrgent = true,
+                notificationId = 103
+            )
+        }
+    }
+
+    private fun checkAlarms(co2Reading: UShort) {
         val now: Instant = kotlin.time.Clock.System.now()
         val timeFormat: SimpleDateFormat = SimpleDateFormat("h:mm:ss a", Locale.getDefault())
 
         checkAlarmState(
-            currentValue = data.co2Reading,
-            threshold = 2000u,
+            currentValue = co2Reading,
+            threshold = highCo2Threshold,
             isHighAlarm = true,
             alarmState = highCo2Alarm,
             notificationId = HIGH_CO2_NOTIFICATION_ID,
@@ -85,8 +115,8 @@ class DataRecorder(
         )
 
         checkAlarmState(
-            currentValue = data.co2Reading,
-            threshold = 400u,
+            currentValue = co2Reading,
+            threshold = lowCo2Threshold,
             isHighAlarm = false,
             alarmState = lowCo2Alarm,
             notificationId = LOW_CO2_NOTIFICATION_ID,

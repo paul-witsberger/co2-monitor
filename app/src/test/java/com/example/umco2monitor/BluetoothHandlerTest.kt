@@ -496,4 +496,26 @@ class BluetoothHandlerTest {
         val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
         assert(state is BleConnectionState.Disconnected)
     }
+
+    /**
+     * Verifies that an unintentional disconnect triggers the auto-reconnect flow.
+     */
+    @Test
+    fun onDisconnected_nonSuccessStatus_triggersAutoConnect() = runTest(testDispatcher) {
+        // Create a mock peripheral
+        val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>(relaxed = true)
+        every { peripheral.name } returns "Test Device"
+
+        // Simulate an unintentional drop (e.g., connection timeout or device went out of range)
+        BluetoothHandler.centralManagerCallback.onDisconnected(peripheral, HciStatus.CONNECTION_TIMEOUT)
+        advanceUntilIdle()
+
+        // Verify that the state transitions to Connecting
+        val state: BleConnectionState = BluetoothHandler.bleConnectionState.value
+        assert(state is BleConnectionState.Connecting)
+        assertEquals("Test Device", (state as BleConnectionState.Connecting).deviceName)
+
+        // Verify that autoConnect was called on the central manager
+        verify { BluetoothHandler.centralManager.autoConnect(peripheral, BluetoothHandler.peripheralCallback) }
+    }
 }

@@ -12,7 +12,6 @@ import androidx.core.content.ContextCompat
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -33,7 +32,7 @@ class DataRecorderTest {
     private val humFlow: MutableStateFlow<Float?> = MutableStateFlow(null)
 
     @BeforeEach
-    fun setup(): Unit {
+    fun setup() {
         mockContext = mockk(relaxed = true)
         mockRepository = mockk(relaxed = true)
         mockNotificationManager = mockk(relaxed = true)
@@ -41,7 +40,7 @@ class DataRecorderTest {
         every { mockContext.getSystemService(Context.NOTIFICATION_SERVICE) } returns mockNotificationManager
         
         mockkConstructor(NotificationChannel::class)
-        every { anyConstructed<NotificationChannel>().setDescription(any<String>()) } returns Unit
+        every { anyConstructed<NotificationChannel>().description = any<String>() } returns Unit
 
         mockkConstructor(NotificationCompat.Builder::class)
         every { anyConstructed<NotificationCompat.Builder>().build() } returns mockk(relaxed = true)
@@ -65,7 +64,7 @@ class DataRecorderTest {
     }
 
     @AfterEach
-    fun teardown(): Unit {
+    fun teardown() {
         unmockkAll()
     }
 
@@ -74,6 +73,7 @@ class DataRecorderTest {
         mockkObject(kotlin.time.Clock.System)
         every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
 
+        @Suppress("UNUSED_VARIABLE", "unused")
         val dataRecorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope)
 
         co2Flow.value = 500u
@@ -91,6 +91,7 @@ class DataRecorderTest {
         mockkObject(kotlin.time.Clock.System)
         every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
 
+        @Suppress("UNUSED_VARIABLE", "unused")
         val dataRecorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope)
 
         co2Flow.value = 2500u
@@ -124,6 +125,7 @@ class DataRecorderTest {
         mockkObject(kotlin.time.Clock.System)
         every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
 
+        @Suppress("UNUSED_VARIABLE", "unused")
         val dataRecorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope)
 
         co2Flow.value = 350u
@@ -165,6 +167,7 @@ class DataRecorderTest {
         mockkObject(kotlin.time.Clock.System)
         every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
 
+        @Suppress("UNUSED_VARIABLE", "unused")
         val recorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope, sdkInt = 33)
 
         // WHEN: A high CO2 reading occurs that would normally trigger an alarm
@@ -175,5 +178,58 @@ class DataRecorderTest {
 
         // THEN: The notification manager should never be called
         verify(exactly = 0) { mockNotificationManager.notify(any(), any()) }
+    }
+
+    /**
+     * Verifies that life-saving CO2 alarms are processed independently
+     * of temperature and humidity data.
+     */
+    @Test
+    fun co2AlarmsTrigger_evenIfTempAndHumidAreNull(): Unit = runTest(UnconfinedTestDispatcher()) {
+        mockkObject(kotlin.time.Clock.System)
+        every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
+
+        @Suppress("UNUSED_VARIABLE", "unused")
+        val dataRecorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope)
+
+        // GIVEN: CO2 reaches a critical level, but temp and humidity sensors fail and emit null
+        co2Flow.value = 2500u
+        tempFlow.value = null
+        humFlow.value = null
+
+        advanceTimeBy(1001)
+
+        // THEN: The CO2 high alarm (ID 101) should STILL trigger
+        verify(exactly = 1) { mockNotificationManager.notify(101, any()) }
+
+        // AND: Database insertion should NOT occur because the record is incomplete
+        coVerify(exactly = 0) { mockRepository.insert(any()) }
+    }
+
+    /**
+     * Verifies that the watchdog timer triggers an urgent alarm if data stops flowing.
+     */
+    @Test
+    fun watchdogTriggers_whenNoDataReceived(): Unit = runTest(UnconfinedTestDispatcher()) {
+        mockkObject(kotlin.time.Clock.System)
+        every { kotlin.time.Clock.System.now() } answers { Instant.fromEpochMilliseconds(testScheduler.currentTime) }
+
+        @Suppress("UNUSED_VARIABLE", "unused")
+        val dataRecorder: DataRecorder = DataRecorder(mockContext, mockRepository, backgroundScope)
+
+        // GIVEN: Normal data flows in, starting the watchdog
+        co2Flow.value = 500u
+        tempFlow.value = 72f
+        humFlow.value = 40f
+        advanceTimeBy(1001)
+
+        // The watchdog is reset, so the alarm shouldn't be fired yet
+        verify(exactly = 0) { mockNotificationManager.notify(103, any()) }
+
+        // WHEN: Time advances past the 30-second watchdog threshold with NO new data
+        advanceTimeBy(31000)
+
+        // THEN: The watchdog notification (ID 103) should be triggered
+        verify(exactly = 1) { mockNotificationManager.notify(103, any()) }
     }
 }

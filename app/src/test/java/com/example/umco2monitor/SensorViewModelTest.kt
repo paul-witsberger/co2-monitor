@@ -37,7 +37,7 @@ class SensorViewModelTest {
     private val mockBatt: MutableStateFlow<UInt?> = MutableStateFlow(null)
 
     @BeforeEach
-    fun setup(): Unit {
+    fun setup() {
         Dispatchers.setMain(testDispatcher)
 
         // 1. Mock Android Framework Statics (Prevents crashes)
@@ -70,13 +70,13 @@ class SensorViewModelTest {
     }
 
     @AfterEach
-    fun tearDown(): Unit {
+    fun tearDown() {
         Dispatchers.resetMain()
         unmockkAll()
     }
 
     @Test
-    fun startScanShouldCallOnPermissionsDeniedWhenPermissionsMissingOnAndroidS(): Unit {
+    fun startScanShouldCallOnPermissionsDeniedWhenPermissionsMissingOnAndroidS() {
         // GIVEN: Permissions are denied
         every { ActivityCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_DENIED
 
@@ -92,7 +92,7 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun startScanShouldDelegateToBluetoothHandlerWhenPermissionsGranted(): Unit {
+    fun startScanShouldDelegateToBluetoothHandlerWhenPermissionsGranted() {
         // GIVEN: Permissions are granted
         every { ActivityCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
 
@@ -103,7 +103,7 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun initShouldInitializeBluetoothHandlerAndObserveState(): Unit {
+    fun initShouldInitializeBluetoothHandlerAndObserveState() {
         verify { BluetoothHandler.initialize(application) }
         val newState: BleConnectionState.Scanning = BleConnectionState.Scanning(emptyList())
         mockBleState.value = newState
@@ -111,19 +111,19 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun onPermissionsDeniedShouldSetStateToError(): Unit {
+    fun onPermissionsDeniedShouldSetStateToError() {
         viewModel.onPermissionsDenied()
         assertTrue(viewModel.bleConnectionState.value is BleConnectionState.Error)
     }
 
     @Test
-    fun stopScanShouldDelegateToBluetoothHandler(): Unit {
+    fun stopScanShouldDelegateToBluetoothHandler() {
         viewModel.stopScan()
         verify { BluetoothHandler.stopScan() }
     }
 
     @Test
-    fun connectToDeviceShouldDelegateToBluetoothHandler(): Unit {
+    fun connectToDeviceShouldDelegateToBluetoothHandler() {
         val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>()
         val device: DiscoveredDevice = DiscoveredDevice("Test", "00:00", peripheral)
         viewModel.connectToDevice(device)
@@ -131,7 +131,7 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun disconnectShouldDelegateToBluetoothHandlerWhenConnected(): Unit {
+    fun disconnectShouldDelegateToBluetoothHandlerWhenConnected() {
         val peripheral: BluetoothPeripheral = mockk<BluetoothPeripheral>()
         mockBleState.value = BleConnectionState.Connected(peripheral)
         viewModel.disconnect()
@@ -139,14 +139,14 @@ class SensorViewModelTest {
     }
 
     @Test
-    fun sensorViewModelFactoryShouldCreateSensorViewModel(): Unit {
+    fun sensorViewModelFactoryShouldCreateSensorViewModel() {
         val factory: SensorViewModelFactory = SensorViewModelFactory(application)
         val createdViewModel: SensorViewModel = factory.create(SensorViewModel::class.java)
         assertEquals(SensorViewModel::class.java, createdViewModel::class.java)
     }
 
     @Test
-    fun setSelectedTabUpdatesSelectedTab(): Unit {
+    fun setSelectedTabUpdatesSelectedTab() {
         viewModel.setSelectedTab(1)
         assertEquals(1, viewModel.selectedTab.value)
         viewModel.setSelectedTab(0)

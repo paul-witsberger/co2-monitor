@@ -25,7 +25,7 @@ class MainActivityInstrumentedTest {
     private val mockHistorySettings: MutableStateFlow<HistorySettings> = MutableStateFlow(HistorySettings())
 
     @Before
-    fun setup(): Unit {
+    fun setup() {
         mockkObject(BluetoothHandler)
 
         every { BluetoothHandler.initialize(any()) } returns Unit
@@ -42,7 +42,7 @@ class MainActivityInstrumentedTest {
     }
 
     @After
-    fun tearDown(): Unit {
+    fun tearDown() {
         unmockkAll()
     }
 
@@ -60,7 +60,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun disconnectedScreen_displaysScanButton(): Unit {
+    fun disconnectedScreen_displaysScanButton() {
         var scanClicked: Boolean = false
         composeTestRule.setContent {
             DisconnectedScreen(onScanClicked = { scanClicked = true })
@@ -71,7 +71,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun connectedScreen_displaysCo2Value(): Unit {
+    fun connectedScreen_displaysCo2Value() {
         val viewModel: SensorViewModel = createMockViewModel()
         mockCo2.value = 450u
         mockTemp.value = 72.14f
@@ -84,7 +84,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun deviceListItem_nullName_showsUnknownDevice(): Unit {
+    fun deviceListItem_nullName_showsUnknownDevice() {
         var clicked: Boolean = false
         composeTestRule.setContent {
             DeviceListItem(
@@ -99,7 +99,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_emptyState_showsNoDevicesMessage(): Unit {
+    fun scanningScreen_emptyState_showsNoDevicesMessage() {
         composeTestRule.setContent {
             ScanningScreen(devices = emptyList(), onDeviceClicked = {}, onStopScanClicked = {})
         }
@@ -108,7 +108,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_withDevices_showsDeviceList(): Unit {
+    fun scanningScreen_withDevices_showsDeviceList() {
         val devices: List<DiscoveredDevice> = listOf(
             DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true)),
             DiscoveredDevice(null, "AA:BB:CC:DD:EE:FF", mockk(relaxed = true))
@@ -121,7 +121,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun scanningScreen_deviceClick_invokesCallback(): Unit {
+    fun scanningScreen_deviceClick_invokesCallback() {
         val device: DiscoveredDevice = DiscoveredDevice("Sensor A", "00:11:22:33:44:55", mockk(relaxed = true))
         var clickedDevice: DiscoveredDevice? = null
         composeTestRule.setContent {
@@ -132,7 +132,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun connectedScreen_nullCo2_showsDashes(): Unit {
+    fun connectedScreen_nullCo2_showsDashes() {
         val viewModel: SensorViewModel = createMockViewModel()
         composeTestRule.setContent {
             ConnectedScreen(viewModel = viewModel)
@@ -141,7 +141,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun connectedScreen_disconnectButton_invokesCallback(): Unit {
+    fun connectedScreen_disconnectButton_invokesCallback() {
         val viewModel: SensorViewModel = createMockViewModel()
         composeTestRule.setContent {
             ConnectedScreen(viewModel = viewModel)
@@ -151,7 +151,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun errorScreen_withBothCallbacks_showsBothButtons(): Unit {
+    fun errorScreen_withBothCallbacks_showsBothButtons() {
         composeTestRule.setContent {
             ErrorScreen(
                 message = "Test error",
@@ -167,7 +167,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun errorScreen_withNoCallbacks_showsNoButtons(): Unit {
+    fun errorScreen_withNoCallbacks_showsNoButtons() {
         composeTestRule.setContent {
             ErrorScreen(message = "Test error", onRerequestClicked = {}, onSettingsClicked = null, firstButtonText = "Restart Scan")
         }
@@ -175,7 +175,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun mainScreen_routing_workflow(): Unit {
+    fun mainScreen_routing_workflow() {
         val mockViewModel: SensorViewModel = createMockViewModel()
 
         composeTestRule.setContent {
@@ -196,7 +196,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun mainScreen_historyTabRouting(): Unit {
+    fun mainScreen_historyTabRouting() {
         val mockViewModel: SensorViewModel = createMockViewModel()
         mockState.value = BleConnectionState.Connected(mockk(relaxed = true))
         mockTab.value = 1 // History tab
@@ -209,7 +209,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun mainScreen_errorRouting_permissionLogic(): Unit {
+    fun mainScreen_errorRouting_permissionLogic() {
         val mockViewModel: SensorViewModel = createMockViewModel()
         val mockActivity: MainActivity = mockk(relaxed = true)
 
@@ -227,7 +227,7 @@ class MainActivityInstrumentedTest {
     }
 
     @Test
-    fun mainScreen_errorRouting_genericLogic(): Unit {
+    fun mainScreen_errorRouting_genericLogic() {
         val mockViewModel: SensorViewModel = createMockViewModel()
         val mockActivity: MainActivity = mockk(relaxed = true)
 

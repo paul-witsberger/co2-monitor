@@ -89,6 +89,10 @@ BLEDescriptor manufacturerNameDescriptor(manufacturerNameCharacteristicUUID, "Ma
 BLEDescriptor modelNumberDescriptor(modelNumberCharacteristicUUID, "Model number");
 BLEDescriptor batteryLevelDescriptor(batteryLevelCharacteristicUUID, "Battery level");
 
+// BLE event handlers for when a central device connects and disconnects
+void bleConnectHandler(BLEDevice central);
+void bleDisconnectHandler(BLEDevice central);
+
 // Test function
 void PrintUint64(uint64_t& value) {
     Serial.print("0x");
@@ -135,6 +139,19 @@ void movingAverage(float valueCO2, float valueTemp, float valueHumid) {
   avgCO2 = sumCO2 / valuesRead;
   avgTemp = sumTemp / valuesRead;
   avgHumid = sumHumid / valuesRead;
+}
+
+void bleConnectHandler(BLEDevice central) {
+    Serial.print("Connected event, central: ");
+    Serial.println(central.address());
+}
+
+// IMPORTANT: Restart advertising after a disconnection
+void bleDisconnectHandler(BLEDevice central) {
+    Serial.print("Disconnected event, central: ");
+    Serial.println(central.address());
+    Serial.println("Restarting advertising...");
+    BLE.advertise();
 }
 
 void setup() {
@@ -210,8 +227,8 @@ void setup() {
   BLE.setAdvertisedService(co2Service);
 
   // Set up event handlers
-  // BLE.setEventHandler(BLEConnected, bleConnectHandler);
-  // BLE.setEventHandler(BLEDisconnected, bleDisconnectHandler);
+   BLE.setEventHandler(BLEConnected, bleConnectHandler);
+   BLE.setEventHandler(BLEDisconnected, bleDisconnectHandler);
   // co2Characteristic.setEventHandler(BLEWritten, co2CharacteristicWritten);
 
   BLE.advertise();

@@ -251,8 +251,13 @@ object BluetoothHandler {
 
         override fun onDisconnected(peripheral: BluetoothPeripheral, status: HciStatus) {
             Timber.i("Disconnected from ${peripheral.name}. Reason: $status")
+
+            // TODO consider adding an error state depending on how the disconnect happened
+            // Check if this was an intentional disconnect or a drop
             if (status != HciStatus.SUCCESS) {
-                _bleConnectionState.value = BleConnectionState.Error("Disconnected with error: $status")
+                _bleConnectionState.value = BleConnectionState.Connecting(peripheral.name)
+                // Auto-reconnect infinitely in the background
+                centralManager.autoConnect(peripheral, peripheralCallback)
             } else {
                 _bleConnectionState.value = BleConnectionState.Disconnected
             }
