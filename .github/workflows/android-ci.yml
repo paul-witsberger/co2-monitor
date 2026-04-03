@@ -25,7 +25,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Unit Tests
-      run: ./gradlew testDebugUnitTest
+      run: ./gradlew testDebugUnitTest --info
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug

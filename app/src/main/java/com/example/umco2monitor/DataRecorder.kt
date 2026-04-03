@@ -3,9 +3,14 @@ package com.example.umco2monitor
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import kotlin.time.Duration.Companion.seconds
@@ -14,7 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.Job
@@ -52,6 +56,9 @@ class DataRecorder(
     private val highCo2Threshold: UShort = 2000u
 
     private var watchdogJob: Job? = null
+
+    // Add a MediaPlayer for urgent alarms
+    private var mediaPlayer: MediaPlayer? = null
 
     init {
         createNotificationChannels()
@@ -174,6 +181,9 @@ class DataRecorder(
                     isUrgent = false,
                     notificationId = notificationId
                 )
+                // Stop the audible alarm if the levels returned to normal on their own
+                stopAudibleAlarm()
+
                 alarmState.status = AlarmStatus.NORMAL
                 alarmState.triggeredAt = null
             }
@@ -197,15 +207,36 @@ class DataRecorder(
         val channelId: String = if (isUrgent) URGENT_ALARM_CHANNEL_ID else REGULAR_ALARM_CHANNEL_ID
         val priority: Int = if (isUrgent) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_DEFAULT
 
-        val notification: android.app.Notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+        // Create an intent that will tell the MeasurementService to stop the alarm
+        val dismissIntent = Intent(context, MeasurementService::class.java).apply {
+            action = MeasurementService.ACTION_DISMISS_ALARM
+        }
+        val dismissPendingIntent = PendingIntent.getService(
+            context,
+            notificationId,
+            dismissIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // TODO Make sure to replace with a real icon
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(priority)
             .setAutoCancel(true)
-            .build()
-        notificationManager.notify(notificationId, notification)
+
+        if (isUrgent) {
+            startAudibleAlarm()
+
+            // Add a "Stop Alarm" button to the notification
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "DISMISS ALARM", dismissPendingIntent)
+
+            // Also stop the alarm if the user swipes the notification away
+            builder.setDeleteIntent(dismissPendingIntent)
+        }
+
+        notificationManager.notify(notificationId, builder.build())
     }
 
     private fun createNotificationChannels() {
@@ -226,6 +257,49 @@ class DataRecorder(
             description = "Notifications for initial sensor alerts."
         }
         notificationManager.createNotificationChannel(regularChannel)
+    }
+
+    /**
+     * Starts playing the system's default Alarm sound continuously.
+     * It uses the ALARM audio stream, which bypasses silent mode.
+     */
+    private fun startAudibleAlarm() {
+        if (mediaPlayer?.isPlaying == true) return // Already playing
+
+        try {
+            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM) // Bypasses silent mode
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(context, alarmUri)
+                setAudioAttributes(audioAttributes)
+                isLooping = true // Play endlessly
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play audible alarm")
+        }
+    }
+
+    /**
+     * Public method to stop the alarm when acknowledged by the user or when levels return to normal.
+     */
+    fun stopAudibleAlarm() {
+        mediaPlayer?.let {
+            if (it.isPlaying) {
+                it.stop()
+            }
+            it.release()
+        }
+        mediaPlayer = null
+
+        // Also ensure we reset the alarm state so it can trigger again later
+        highCo2Alarm.status = AlarmStatus.NORMAL
+        lowCo2Alarm.status = AlarmStatus.NORMAL
     }
 
     companion object {

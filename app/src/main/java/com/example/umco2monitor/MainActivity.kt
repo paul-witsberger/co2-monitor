@@ -1,10 +1,13 @@
 package com.example.umco2monitor
 
-import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.Manifest
+import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
@@ -13,26 +16,32 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.umco2monitor.ui.theme.UMCO2MonitorTheme
@@ -43,6 +52,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
+import kotlin.text.append
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
@@ -120,6 +130,25 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * Checks if the app is currently exempt from battery optimizations.
+     */
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /**
+     * Launches the system dialog asking the user to ignore battery optimizations.
+     */
+    @SuppressLint("BatteryLife")
+    fun requestIgnoreBatteryOptimizations() {
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        startActivity(intent)
+    }
 }
 
 // TODO: Implement a "Help" menu where the user can learn more about how to use and interact with the app
@@ -133,6 +162,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Modifier = Modifier) {
     val bleConnectionState: BleConnectionState by viewModel.bleConnectionState.collectAsState()
+
+    // Track whether we need to show the battery warning dialog
+    var showBatteryWarning by remember { mutableStateOf(!activity.isIgnoringBatteryOptimizations()) }
 
     LaunchedEffect(bleConnectionState) {
         when (bleConnectionState) {
@@ -151,6 +183,17 @@ fun MainScreen(viewModel: SensorViewModel, activity: MainActivity, modifier: Mod
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        // Show battery warning dialog if optimizations are still enabled
+        if (showBatteryWarning) {
+            BatteryOptimizationWarningDialog(
+                onDismiss = { showBatteryWarning = false },
+                onRequest = {
+                    activity.requestIgnoreBatteryOptimizations()
+                    showBatteryWarning = false
+                }
+            )
+        }
+
         when (val state: BleConnectionState = bleConnectionState) {
             is BleConnectionState.Disconnected -> DisconnectedScreen(onScanClicked = { viewModel.startScan() })
             is BleConnectionState.Scanning -> ScanningScreen(
@@ -206,7 +249,9 @@ fun LiveView(viewModel: SensorViewModel) {
     val humidityValue: Float? by viewModel.humidityValue.collectAsState()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -232,8 +277,12 @@ fun LiveView(viewModel: SensorViewModel) {
  */
 @Composable
 fun ReadingCard(label: String, value: String, unit: String, color: Color) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+    Card(modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Row(modifier = Modifier
+            .padding(16.dp)
+            .fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
                 Text(text = label, style = MaterialTheme.typography.labelLarge, color = color)
                 Text(text = "$value $unit", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
@@ -259,7 +308,9 @@ fun HistoryView(viewModel: SensorViewModel) {
         "7D" to 7.days
     )
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp)) {
         Text("Sensor History", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -372,7 +423,11 @@ fun SensorPlot(data: List<SensorData>, settings: HistorySettings) {
                 val panInDuration: Duration = oldVisibleDuration * (pan.x / plotWidth).toDouble()
 
                 val durationChangeFromZoom: Duration = oldVisibleDuration - newVisibleDuration
-                val zoomShift: Duration = durationChangeFromZoom * (1.0 - (centroid.x - paddingLeftPx) / plotWidth).coerceIn(0.0, 1.0)
+                val zoomShift: Duration =
+                    durationChangeFromZoom * (1.0 - (centroid.x - paddingLeftPx) / plotWidth).coerceIn(
+                        0.0,
+                        1.0
+                    )
 
                 timeShift += panInDuration + zoomShift
                 timeShift = timeShift.coerceAtLeast(Duration.ZERO)
@@ -636,10 +691,14 @@ fun DisconnectedScreen(onScanClicked: () -> Unit) {
  */
 @Composable
 fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (DiscoveredDevice) -> Unit, onStopScanClicked: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp)) {
         Text("Scanning...", style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(modifier = Modifier.height(16.dp))
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Box(modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()) {
             if (devices.isEmpty()) Text("No devices found yet...", modifier = Modifier.align(Alignment.Center))
             else LazyColumn { items(devices) { device: DiscoveredDevice -> DeviceListItem(device) { onDeviceClicked(device) } } }
         }
@@ -656,7 +715,10 @@ fun ScanningScreen(devices: List<DiscoveredDevice>, onDeviceClicked: (Discovered
  */
 @Composable
 fun DeviceListItem(device: DiscoveredDevice, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+    Card(modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 4.dp)
+        .clickable(onClick = onClick), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = device.name ?: "Unknown Device", fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
@@ -697,4 +759,35 @@ fun ErrorScreen(message: String, onRerequestClicked: () -> Unit, onSettingsClick
         Button(onClick = onRerequestClicked) { Text(firstButtonText) }
         onSettingsClicked?.let { callback: () -> Unit -> Spacer(modifier = Modifier.height(8.dp)); Button(onClick = callback) { Text("Go to Settings") } }
     }
+}
+
+@Composable
+fun BatteryOptimizationWarningDialog(
+    onDismiss: () -> Unit,
+    onRequest: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onRequest) {
+                Text("Next")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Ignore") } },
+        text = { Text( text = buildAnnotatedString {
+                    append("To ensure alarms sound even when your phone is asleep, it is ")
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) { append("strongly") }
+                    append(" recommended to allow this app to run without battery restrictions. This" +
+                            " will result in slightly increased battery usage, but ensures that " +
+                            "notifications are not suppressed when the phone is asleep.\n\n" +
+                            "Please click 'Next' and select 'Allow' or 'Unrestricted'.")
+                } )
+        },
+        icon = { Icon(
+                painter = painterResource(id = android.R.drawable.ic_dialog_alert),
+                contentDescription = "Warning",
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    )
 }

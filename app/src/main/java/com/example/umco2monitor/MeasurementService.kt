@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.Manifest
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -27,14 +28,46 @@ class MeasurementService : Service() {
     private val serviceScope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var dataRecorder: DataRecorder
 
+    private var wakeLock: PowerManager.WakeLock? = null
+
     /**
      * Called when the service is created.
      */
     override fun onCreate() {
         super.onCreate()
         Timber.d("MeasurementService is being created.")
+
+        // Get the PowerManager
+        val powerManager: PowerManager = getSystemService(POWER_SERVICE) as PowerManager
+
+        // Create the WakeLock
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "UMCO2Monitor::WakeLock"
+        )
+
+        // Acquire the lock
+        // TODO should I set a timeout?
+        wakeLock?.acquire()
+        Timber.d("MeasurementService has acquired the wake lock.")
+
         val repository: SensorRepository = SensorRepository(SensorDatabase.getInstance(this).sensorDataDao())
         dataRecorder = DataRecorder(this, repository, serviceScope)
+    }
+
+    /**
+     * Called when the service is destroyed.
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        Timber.d("MeasurementService is being destroyed.")
+        serviceScope.cancel()
+
+        // Release the WakeLock
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+            Timber.d("Partial WakeLock released.")
+        }
     }
 
     /**
@@ -63,6 +96,15 @@ class MeasurementService : Service() {
             return START_NOT_STICKY
         }
 
+        // Check if the user tapped "Dismiss Alarm"
+        if (intent?.action == ACTION_DISMISS_ALARM) {
+            Timber.d("User dismissed the alarm.")
+            if (::dataRecorder.isInitialized) {
+                dataRecorder.stopAudibleAlarm()
+            }
+            return START_STICKY
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -74,15 +116,6 @@ class MeasurementService : Service() {
         }
 
         return START_STICKY
-    }
-
-    /**
-     * Called when the service is destroyed.
-     */
-    override fun onDestroy() {
-        super.onDestroy()
-        Timber.d("MeasurementService is being destroyed.")
-        serviceScope.cancel()
     }
 
     /**
@@ -124,5 +157,6 @@ class MeasurementService : Service() {
     companion object {
         private const val NOTIFICATION_ID: Int = 1
         private const val CHANNEL_ID: String = "MeasurementServiceChannel"
+        const val ACTION_DISMISS_ALARM = "com.example.umco2monitor.DISMISS_ALARM"
     }
 }

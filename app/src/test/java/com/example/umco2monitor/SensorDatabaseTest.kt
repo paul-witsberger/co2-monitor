@@ -1,9 +1,10 @@
 package com.example.umco2monitor
 
-import org.junit.jupiter.api.Assertions.assertEquals
+import kotlin.test.assertEquals
+import kotlin.time.Instant
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import kotlin.time.Instant
+
 
 /**
  * Local unit tests for the Room database [Converters].
