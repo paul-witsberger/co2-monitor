@@ -34,7 +34,7 @@ class DataLoggerTest {
 
     @Test
     fun logsToDatabase_onlyWhenAllDataIsPresent() = runTest(testDispatcher) {
-        // CHANGED: Use backgroundScope
+        @Suppress("UNUSED_VARIABLE", "unused")
         val logger = DataLogger(mockRepository, backgroundScope)
 
         // Missing Temperature - Should NOT insert

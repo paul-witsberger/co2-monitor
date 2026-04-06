@@ -34,7 +34,7 @@ class AlarmMonitorTest {
 
     @Test
     fun triggersWatchdog_after15SecondsOfNoData() = runTest(testDispatcher) {
-        // CHANGED: Use backgroundScope
+        @Suppress("UNUSED_VARIABLE", "unused")
         val monitor = AlarmMonitor(backgroundScope, mockPreferencesManager, mockNotifier)
 
         co2Flow.value = 500u
@@ -51,7 +51,7 @@ class AlarmMonitorTest {
         mockkObject(kotlin.time.Clock.System)
         every { kotlin.time.Clock.System.now() } answers { kotlin.time.Instant.fromEpochMilliseconds(testScheduler.currentTime) }
 
-        // CHANGED: Use backgroundScope
+        @Suppress("UNUSED_VARIABLE", "unused")
         val monitor = AlarmMonitor(backgroundScope, mockPreferencesManager, mockNotifier)
 
         co2Flow.value = 2500u
