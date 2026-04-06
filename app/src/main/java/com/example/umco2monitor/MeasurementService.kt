@@ -5,15 +5,19 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.Manifest
+import android.content.Context
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,9 +30,26 @@ import timber.log.Timber
 class MeasurementService : Service() {
 
     private val serviceScope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private lateinit var dataRecorder: DataRecorder
+
+    private lateinit var dataLogger: DataLogger
+    private lateinit var alarmNotifier: AlarmNotifier
+    private lateinit var alarmMonitor: AlarmMonitor
 
     private var wakeLock: PowerManager.WakeLock? = null
+
+    // Define the BroadcastReceiver to catch the button click
+    private val dismissReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_DISMISS_ALARM) {
+                Timber.d("User dismissed the alarm via Broadcast.")
+                val notificationId = intent.getIntExtra("NOTIFICATION_ID", -1)
+
+                if (notificationId != -1 && ::alarmMonitor.isInitialized) {
+                    alarmMonitor.muteAlarm(notificationId)
+                }
+            }
+        }
+    }
 
     /**
      * Called when the service is created.
@@ -52,7 +73,16 @@ class MeasurementService : Service() {
         Timber.d("MeasurementService has acquired the wake lock.")
 
         val repository: SensorRepository = SensorRepository(SensorDatabase.getInstance(this).sensorDataDao())
-        dataRecorder = DataRecorder(this, repository, serviceScope)
+        val preferencesManager: AlarmPreferencesManager = AlarmPreferencesManager(this)
+
+        dataLogger = DataLogger(repository, serviceScope)
+        alarmNotifier = AlarmNotifier(this)
+        alarmMonitor = AlarmMonitor(serviceScope, preferencesManager, alarmNotifier)
+
+        // Register the BroadcastReceiver dynamically
+        val filter = IntentFilter(ACTION_DISMISS_ALARM)
+        ContextCompat.registerReceiver(this, dismissReceiver, filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     /**
@@ -62,6 +92,9 @@ class MeasurementService : Service() {
         super.onDestroy()
         Timber.d("MeasurementService is being destroyed.")
         serviceScope.cancel()
+
+        // Unregister the receiver to prevent memory leaks
+        unregisterReceiver(dismissReceiver)
 
         // Release the WakeLock
         if (wakeLock?.isHeld == true) {
@@ -94,15 +127,6 @@ class MeasurementService : Service() {
             Timber.w("Cannot start foreground service: POST_NOTIFICATIONS permission not granted.")
             stopSelf()
             return START_NOT_STICKY
-        }
-
-        // Check if the user tapped "Dismiss Alarm"
-        if (intent?.action == ACTION_DISMISS_ALARM) {
-            Timber.d("User dismissed the alarm.")
-            if (::dataRecorder.isInitialized) {
-                dataRecorder.stopAudibleAlarm()
-            }
-            return START_STICKY
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
